@@ -1,7 +1,7 @@
 /**
  * Tiny entry script (not bundled). Chrome loads this first.
  */
-const BUILD = "0.4.3";
+const BUILD = "0.4.4";
 const MODULE = chrome.runtime.getURL("dist/content.js");
 
 function showBootStatus(text) {
