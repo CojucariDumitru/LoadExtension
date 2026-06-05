@@ -48,11 +48,13 @@ Open **Settings** from the popup or extension options:
 - **Telegram** — optional alerts when a new matching load appears
 - **Auto refresh** — reload the search tab on an interval
 
-### RTS factoring scores
+### RTS factoring (like LoadHunter)
 
-**Automatic (recommended):** Call RTS (855-851-1005) and request your **webservice User ID and password** for `webservice.rtscredit.com`. Enter them in extension Settings. The extension calls the same SOAP API LoadHunter-style tools use and shows grades inline on DAT.
+1. Click the **LoadExtension** icon → **Connect RTS**
+2. Log into rtspro.com (same account you already use)
+3. Go back to DAT — broker credit grades appear automatically
 
-**Manual cache:** Log into [rtspro.com/credit/search](https://rtspro.com/credit/search). When you open a broker's credit page, the extension caches the grade for 7 days and shows it on matching loads.
+No webservice credentials required. The extension uses your RTS browser session.
 
 ### TollGuru toll calculations
 
