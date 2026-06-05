@@ -4,9 +4,20 @@ export class OverlayManager {
   constructor() {
     this.entries = new Map();
     this.root = this.ensureRoot();
+    this.repositionScheduled = false;
     this.repositionAll = this.repositionAll.bind(this);
-    window.addEventListener("scroll", this.repositionAll, true);
-    window.addEventListener("resize", this.repositionAll);
+    this.scheduleRepositionAll = this.scheduleRepositionAll.bind(this);
+    window.addEventListener("scroll", this.scheduleRepositionAll, true);
+    window.addEventListener("resize", this.scheduleRepositionAll);
+  }
+
+  scheduleRepositionAll() {
+    if (this.repositionScheduled) return;
+    this.repositionScheduled = true;
+    requestAnimationFrame(() => {
+      this.repositionScheduled = false;
+      this.repositionAll();
+    });
   }
 
   ensureRoot() {

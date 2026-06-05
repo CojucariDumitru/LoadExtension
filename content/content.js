@@ -3,9 +3,9 @@ import { detectBoard, scanForLoads } from "./parsers.js";
 import { enrichLoad, renderLoadEnhancements } from "./ui.js";
 import { OverlayManager } from "./overlay.js";
 
-const SCAN_MIN_INTERVAL_MS = 2000;
-const INITIAL_SCAN_DELAY_MS = 3000;
-const PERIODIC_SCAN_MS = 8000;
+const SCAN_MIN_INTERVAL_MS = 4000;
+const INITIAL_SCAN_DELAY_MS = 5000;
+const PERIODIC_SCAN_MS = 15000;
 
 const STATE = {
   settings: null,
@@ -76,7 +76,7 @@ function runScanWhenIdle(callback) {
   callback();
 }
 
-function scanPage() {
+async function scanPage() {
   if (!STATE.settings?.enabled || STATE.scanning || isPageLoading()) return;
 
   const now = Date.now();
@@ -88,9 +88,14 @@ function scanPage() {
   try {
     const root = findBoardRoot() || document.body;
     const loads = scanForLoads(root);
-    for (const load of loads) {
-      processLoadRow(load);
+
+    for (let i = 0; i < loads.length; i += 1) {
+      processLoadRow(loads[i]);
+      if (i > 0 && i % 10 === 0) {
+        await new Promise((resolve) => setTimeout(resolve, 0));
+      }
     }
+
     STATE.overlay.repositionAll();
     updateToolbar(loads.length);
   } finally {
@@ -100,7 +105,7 @@ function scanPage() {
 
 function scheduleScan() {
   if (STATE.scanTimer) clearTimeout(STATE.scanTimer);
-  STATE.scanTimer = setTimeout(() => runScanWhenIdle(scanPage), 1200);
+  STATE.scanTimer = setTimeout(() => runScanWhenIdle(() => scanPage()), 1200);
 }
 
 function resetEnhancements() {
@@ -182,9 +187,14 @@ async function init() {
   if (!STATE.settings.enabled) return;
 
   const boardRoot = await waitForBoard();
-  setTimeout(() => runScanWhenIdle(scanPage), INITIAL_SCAN_DELAY_MS);
-  setInterval(() => runScanWhenIdle(scanPage), PERIODIC_SCAN_MS);
-  if (boardRoot) setupBoardObserver(boardRoot);
+  setTimeout(() => runScanWhenIdle(() => scanPage()), INITIAL_SCAN_DELAY_MS);
+  setInterval(() => runScanWhenIdle(() => scanPage()), PERIODIC_SCAN_MS);
+
+  // DAT's React grid mutates constantly — observing it freezes the tab.
+  if (boardRoot && detectBoard() !== "dat") {
+    setupBoardObserver(boardRoot);
+  }
+
   setupAutoRefresh();
 }
 

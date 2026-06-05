@@ -68,10 +68,14 @@ function isSafeRowElement(element) {
   return true;
 }
 
+function rowText(element) {
+  return element.textContent || "";
+}
+
 function isLikelyLoadRow(element) {
   if (!isSafeRowElement(element)) return false;
 
-  const text = element.innerText || "";
+  const text = rowText(element);
   if (text.length < 24 || text.length > 900) return false;
 
   const cities = extractCityPairs(text);
@@ -90,6 +94,8 @@ function selectorsForBoard(board) {
   return ["table tbody tr", '[role="row"]'];
 }
 
+const MAX_ROWS_PER_SCAN = 80;
+
 function findRowCandidates(root) {
   const board = detectBoard();
   const selectors = selectorsForBoard(board);
@@ -98,6 +104,7 @@ function findRowCandidates(root) {
 
   for (const selector of selectors) {
     for (const el of root.querySelectorAll(selector)) {
+      if (rows.length >= MAX_ROWS_PER_SCAN) return rows;
       if (seen.has(el) || !isLikelyLoadRow(el)) continue;
       seen.add(el);
       rows.push(el);
@@ -108,7 +115,7 @@ function findRowCandidates(root) {
 }
 
 export function parseLoadFromElement(element) {
-  const text = element.innerText || "";
+  const text = rowText(element);
   const cities = extractCityPairs(text);
   const origin = cities[0]?.label || "";
   const destination = cities[1]?.label || "";
