@@ -522,6 +522,7 @@ var OverlayManager = class {
 };
 
 // content/content.js
+var BUILD_VERSION = "0.4.0";
 var SCAN_MIN_INTERVAL_MS = 4e3;
 var INITIAL_SCAN_DELAY_MS = 5e3;
 var PERIODIC_SCAN_MS = 15e3;
@@ -564,8 +565,11 @@ function processLoadRow(load) {
     });
   }
 }
+function isDatSplash() {
+  return /Loading DAT One/i.test(document.body?.textContent || "");
+}
 function isPageLoading() {
-  return Boolean(
+  return isDatSplash() || Boolean(
     document.querySelector('[aria-busy="true"]') || document.querySelector(
       '[class*="loading" i], [class*="spinner" i], [class*="skeleton" i], [data-testid*="loading" i]'
     )
@@ -627,6 +631,7 @@ function updateToolbar(count) {
     toolbar.innerHTML = `
       <img src="${chrome.runtime.getURL("icons/icon16.png")}" alt="" width="16" height="16" />
       <strong>LoadExtension</strong>
+      <span class="le-version">v${BUILD_VERSION}</span>
       <span id="le-load-count">0 loads</span>
       <button type="button" id="le-rescan-btn">Rescan</button>
     `;
@@ -669,9 +674,10 @@ async function waitForBoard(maxMs = 2e4) {
   return findBoardRoot();
 }
 async function init() {
+  if (isPageLoading() || detectBoard() === "dat" && isDatSplash()) return;
   STATE.settings = await getSettings();
-  STATE.overlay = new OverlayManager();
   if (!STATE.settings.enabled) return;
+  STATE.overlay = new OverlayManager();
   const boardRoot = await waitForBoard();
   setTimeout(() => runScanWhenIdle(() => scanPage()), INITIAL_SCAN_DELAY_MS);
   setInterval(() => runScanWhenIdle(() => scanPage()), PERIODIC_SCAN_MS);
@@ -700,8 +706,13 @@ chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
     });
   }
 });
-if (document.readyState === "loading") {
-  document.addEventListener("DOMContentLoaded", init);
-} else {
-  init();
+async function boot() {
+  if (document.readyState === "loading") {
+    await new Promise((resolve) => document.addEventListener("DOMContentLoaded", resolve, { once: true }));
+  }
+  await init();
 }
+export {
+  BUILD_VERSION,
+  boot
+};
