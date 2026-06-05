@@ -1,7 +1,7 @@
 {
   "manifest_version": 3,
   "name": "LoadExtension",
-  "version": "0.4.0",
+  "version": "0.4.1",
   "description": "Dispatch helper for DAT — RPM filters, RTS credit, tolls, email, and maps.",
   "permissions": ["storage", "tabs", "cookies"],
   "host_permissions": [
@@ -48,8 +48,7 @@
   "content_scripts": [
     {
       "matches": [
-        "https://one.dat.com/search-loads*",
-        "https://one.dat.com/search/*",
+        "https://one.dat.com/*",
         "https://power.dat.com/*",
         "https://*.truckstop.com/*",
         "https://*.trucksmarter.com/*"

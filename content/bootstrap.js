@@ -2,7 +2,6 @@
  * Tiny entry script (not bundled). Chrome loads this first.
  * Waits for DAT's splash screen to finish before importing the heavy module.
  */
-const BUILD = "0.4.0";
 const MODULE = chrome.runtime.getURL("dist/content.js");
 
 function isDatHost() {
@@ -14,29 +13,37 @@ function isDatSplash() {
   return /Loading DAT One/i.test(text);
 }
 
+function hasBoard() {
+  return Boolean(
+    document.querySelector(
+      '[role="grid"], [role="treegrid"], .ag-root, .ag-center-cols-container, [role="table"]'
+    )
+  );
+}
+
 async function waitForDatReady() {
   if (!isDatHost()) return;
 
-  const deadline = Date.now() + 120000;
+  const deadline = Date.now() + 90000;
   while (Date.now() < deadline) {
-    const pastSplash = !isDatSplash();
-    const hasBoard = Boolean(
-      document.querySelector('[role="grid"]') || document.querySelector('[role="table"]')
-    );
-    if (pastSplash && (hasBoard || location.pathname.includes("search"))) return;
-    await new Promise((resolve) => setTimeout(resolve, 750));
+    if (!isDatSplash() && (hasBoard() || location.pathname.includes("search"))) return;
+    await new Promise((resolve) => setTimeout(resolve, 500));
   }
 }
 
 async function start() {
-  await waitForDatReady();
-  if (isDatHost()) {
-    await new Promise((resolve) => setTimeout(resolve, 4000));
-  }
+  try {
+    await waitForDatReady();
+    if (isDatHost()) {
+      await new Promise((resolve) => setTimeout(resolve, 2000));
+    }
 
-  const mod = await import(MODULE);
-  if (typeof mod.boot === "function") {
-    await mod.boot();
+    const mod = await import(MODULE);
+    if (typeof mod.boot === "function") {
+      await mod.boot();
+    }
+  } catch (error) {
+    console.error("[LoadExtension] bootstrap failed:", error);
   }
 }
 

@@ -113,14 +113,25 @@ function extractCityPairs(text) {
     label: `${m[1].trim()}, ${m[2]}`
   }));
 }
-function guessRate(text) {
+function guessRate(text, board = "generic") {
   const dollarMatches = [...text.matchAll(/\$\s*([\d,]+(?:\.\d{2})?)/g)];
-  if (!dollarMatches.length) return 0;
-  return Math.max(...dollarMatches.map((m) => parseMoney(m[1])));
+  if (dollarMatches.length) {
+    return Math.max(...dollarMatches.map((m) => parseMoney(m[1])));
+  }
+  if (board !== "dat") return 0;
+  const plainMatches = [...text.matchAll(/\b([\d,]{3,6})\b/g)];
+  const rates = plainMatches.map((m) => parseMoney(m[1])).filter((value) => value >= 150 && value <= 25e3);
+  return rates.length ? Math.max(...rates) : 0;
 }
-function guessMiles(text) {
+function guessMiles(text, board = "generic") {
   const mileMatches = [...text.matchAll(/([\d,]+)\s*(?:mi|miles)\b/gi)];
   for (const match of mileMatches) {
+    const value = parseMiles(match[1]);
+    if (value >= 50 && value <= 3500) return value;
+  }
+  if (board !== "dat") return 0;
+  const plainMatches = [...text.matchAll(/\b([\d,]{2,4})\b/g)];
+  for (const match of plainMatches) {
     const value = parseMiles(match[1]);
     if (value >= 50 && value <= 3500) return value;
   }
@@ -142,6 +153,12 @@ function detectBoard() {
   if (host.includes("trucksmarter.com")) return "trucksmarter";
   return "generic";
 }
+function rowText(element) {
+  return element.textContent || "";
+}
+function isAgGridRow(element) {
+  return element.classList?.contains("ag-row") && element.getAttribute("role") === "row";
+}
 function isSafeRowElement(element) {
   if (!(element instanceof HTMLElement)) return false;
   if (element.id === "loadextension-overlay-root") return false;
@@ -149,6 +166,11 @@ function isSafeRowElement(element) {
     return false;
   }
   if (element.matches("thead, th, script, style, nav, header, footer, html, body")) return false;
+  const board = detectBoard();
+  if (board === "dat" && isAgGridRow(element)) {
+    const rect2 = element.getBoundingClientRect();
+    return rect2.height >= 20 && rect2.height <= 200 && rect2.width >= 100;
+  }
   const rect = element.getBoundingClientRect();
   if (rect.height < 28 || rect.height > 160) return false;
   if (rect.width < 200) return false;
@@ -156,27 +178,32 @@ function isSafeRowElement(element) {
   if (element.children.length > 30) return false;
   return true;
 }
-function rowText(element) {
-  return element.textContent || "";
-}
 function isLikelyLoadRow(element) {
   if (!isSafeRowElement(element)) return false;
+  const board = detectBoard();
   const text = rowText(element);
-  if (text.length < 24 || text.length > 900) return false;
+  if (text.length < 16 || text.length > 1200) return false;
   const cities = extractCityPairs(text);
   if (cities.length < 2) return false;
-  return guessRate(text) > 0 || guessMiles(text) > 0;
+  return guessRate(text, board) > 0 || guessMiles(text, board) > 0;
 }
 function selectorsForBoard(board) {
   if (board === "dat") {
-    return ['[role="grid"] [role="row"]', '[role="table"] [role="row"]', "table tbody tr"];
+    return [
+      ".ag-center-cols-container .ag-row",
+      '.ag-row[role="row"]',
+      '[role="treegrid"] [role="row"]',
+      '[role="grid"] [role="row"]',
+      '[role="table"] [role="row"]',
+      "table tbody tr"
+    ];
   }
   if (board === "truckstop") {
     return ["table tbody tr", '[role="row"]'];
   }
   return ["table tbody tr", '[role="row"]'];
 }
-var MAX_ROWS_PER_SCAN = 80;
+var MAX_ROWS_PER_SCAN = 120;
 function findRowCandidates(root) {
   const board = detectBoard();
   const selectors = selectorsForBoard(board);
@@ -193,12 +220,13 @@ function findRowCandidates(root) {
   return rows;
 }
 function parseLoadFromElement(element) {
+  const board = detectBoard();
   const text = rowText(element);
   const cities = extractCityPairs(text);
   const origin = cities[0]?.label || "";
   const destination = cities[1]?.label || "";
-  const rate = guessRate(text);
-  const miles = guessMiles(text);
+  const rate = guessRate(text, board);
+  const miles = guessMiles(text, board);
   const emailMatch = text.match(EMAIL_RE);
   const dotMatch = text.match(DOT_RE);
   const mcMatches = [...text.matchAll(/\bMC\s*#?\s*(\d{5,8})\b/gi)].map((m) => m[1]);
@@ -223,7 +251,21 @@ function parseLoadFromElement(element) {
   };
 }
 function scanForLoads(root = document.body) {
-  return findRowCandidates(root).map(parseLoadFromElement).filter((load) => load.origin && load.destination);
+  const board = detectBoard();
+  const roots = [root];
+  if (board === "dat" && root !== document.body) {
+    roots.push(document.body);
+  }
+  const seen = /* @__PURE__ */ new Set();
+  const loads = [];
+  for (const scanRoot of roots) {
+    for (const load of findRowCandidates(scanRoot).map(parseLoadFromElement)) {
+      if (!load.origin || !load.destination || seen.has(load.id)) continue;
+      seen.add(load.id);
+      loads.push(load);
+    }
+  }
+  return loads;
 }
 
 // shared/email.js
@@ -522,19 +564,21 @@ var OverlayManager = class {
 };
 
 // content/content.js
-var BUILD_VERSION = "0.4.0";
-var SCAN_MIN_INTERVAL_MS = 4e3;
-var INITIAL_SCAN_DELAY_MS = 5e3;
-var PERIODIC_SCAN_MS = 15e3;
+var BUILD_VERSION = "0.4.1";
+var SCAN_MIN_INTERVAL_MS = 3e3;
+var INITIAL_SCAN_DELAY_MS = 2e3;
+var PERIODIC_SCAN_MS = 12e3;
 var STATE = {
   settings: null,
   refreshTimer: null,
   scanTimer: null,
+  scrollTimer: null,
   overlay: null,
   boardObserver: null,
   processedIds: /* @__PURE__ */ new Set(),
   scanning: false,
-  lastScanAt: 0
+  lastScanAt: 0,
+  started: false
 };
 function notifyBackground(type, payload) {
   chrome.runtime.sendMessage({ type, payload }).catch(() => {
@@ -569,16 +613,18 @@ function isDatSplash() {
   return /Loading DAT One/i.test(document.body?.textContent || "");
 }
 function isPageLoading() {
-  return isDatSplash() || Boolean(
-    document.querySelector('[aria-busy="true"]') || document.querySelector(
-      '[class*="loading" i], [class*="spinner" i], [class*="skeleton" i], [data-testid*="loading" i]'
-    )
+  if (isDatSplash()) return true;
+  const agLoading = document.querySelector(".ag-overlay-loading-wrapper:not(.ag-hidden)");
+  if (agLoading) return true;
+  const busy = document.querySelector('[aria-busy="true"]');
+  return Boolean(
+    busy && busy.closest('[role="grid"], [role="treegrid"], .ag-root, main, [class*="search" i]')
   );
 }
 function findBoardRoot() {
   const board = detectBoard();
   if (board === "dat") {
-    return document.querySelector('[role="grid"]') || document.querySelector('[role="table"]');
+    return document.querySelector(".ag-center-cols-container") || document.querySelector('[role="treegrid"]') || document.querySelector('[role="grid"]') || document.querySelector(".ag-root") || document.querySelector('[role="table"]');
   }
   return document.querySelector("table") || document.body;
 }
@@ -589,12 +635,21 @@ function runScanWhenIdle(callback) {
   }
   callback();
 }
+function setToolbarStatus(text) {
+  const countEl = document.getElementById("le-load-count");
+  if (countEl) countEl.textContent = text;
+}
 async function scanPage() {
-  if (!STATE.settings?.enabled || STATE.scanning || isPageLoading()) return;
+  if (!STATE.settings?.enabled || STATE.scanning) return;
+  if (isPageLoading()) {
+    setToolbarStatus("waiting for board\u2026");
+    return;
+  }
   const now = Date.now();
   if (now - STATE.lastScanAt < SCAN_MIN_INTERVAL_MS) return;
   STATE.scanning = true;
   STATE.lastScanAt = now;
+  setToolbarStatus("scanning\u2026");
   try {
     const root = findBoardRoot() || document.body;
     const loads = scanForLoads(root);
@@ -605,42 +660,39 @@ async function scanPage() {
       }
     }
     STATE.overlay.repositionAll();
-    updateToolbar(loads.length);
+    setToolbarStatus(`${loads.length} loads`);
   } finally {
     STATE.scanning = false;
   }
 }
 function scheduleScan() {
   if (STATE.scanTimer) clearTimeout(STATE.scanTimer);
-  STATE.scanTimer = setTimeout(() => runScanWhenIdle(() => scanPage()), 1200);
+  STATE.scanTimer = setTimeout(() => runScanWhenIdle(() => scanPage()), 800);
 }
 function resetEnhancements() {
   STATE.processedIds.clear();
-  STATE.overlay.clear();
+  STATE.overlay?.clear();
 }
-function updateToolbar(count) {
+function ensureToolbar() {
   let toolbar = document.getElementById("loadextension-toolbar");
-  if (!toolbar) {
-    toolbar = document.createElement("div");
-    toolbar.id = "loadextension-toolbar";
-    toolbar.className = "le-toolbar";
-    document.documentElement.appendChild(toolbar);
-  }
-  const rescanBtn = toolbar.querySelector("#le-rescan-btn");
-  if (!rescanBtn) {
-    toolbar.innerHTML = `
-      <img src="${chrome.runtime.getURL("icons/icon16.png")}" alt="" width="16" height="16" />
-      <strong>LoadExtension</strong>
-      <span class="le-version">v${BUILD_VERSION}</span>
-      <span id="le-load-count">0 loads</span>
-      <button type="button" id="le-rescan-btn">Rescan</button>
-    `;
-    toolbar.querySelector("#le-rescan-btn")?.addEventListener("click", () => {
-      resetEnhancements();
-      scanPage();
-    });
-  }
-  toolbar.querySelector("#le-load-count").textContent = `${count} loads`;
+  if (toolbar) return toolbar;
+  toolbar = document.createElement("div");
+  toolbar.id = "loadextension-toolbar";
+  toolbar.className = "le-toolbar";
+  toolbar.innerHTML = `
+    <img src="${chrome.runtime.getURL("icons/icon16.png")}" alt="" width="16" height="16" />
+    <strong>LoadExtension</strong>
+    <span class="le-version">v${BUILD_VERSION}</span>
+    <span id="le-load-count">starting\u2026</span>
+    <button type="button" id="le-rescan-btn">Rescan</button>
+  `;
+  toolbar.querySelector("#le-rescan-btn")?.addEventListener("click", () => {
+    resetEnhancements();
+    STATE.lastScanAt = 0;
+    scanPage();
+  });
+  document.documentElement.appendChild(toolbar);
+  return toolbar;
 }
 function setupAutoRefresh() {
   if (STATE.refreshTimer) {
@@ -664,7 +716,18 @@ function setupBoardObserver(root) {
   });
   STATE.boardObserver.observe(root, { childList: true, subtree: true });
 }
-async function waitForBoard(maxMs = 2e4) {
+function setupDatScrollRescan() {
+  if (detectBoard() !== "dat") return;
+  window.addEventListener(
+    "scroll",
+    () => {
+      if (STATE.scrollTimer) clearTimeout(STATE.scrollTimer);
+      STATE.scrollTimer = setTimeout(() => scheduleScan(), 600);
+    },
+    true
+  );
+}
+async function waitForBoard(maxMs = 3e4) {
   const start = Date.now();
   while (Date.now() - start < maxMs) {
     const root = findBoardRoot();
@@ -674,30 +737,39 @@ async function waitForBoard(maxMs = 2e4) {
   return findBoardRoot();
 }
 async function init() {
-  if (isPageLoading() || detectBoard() === "dat" && isDatSplash()) return;
+  if (STATE.started) return;
+  STATE.started = true;
+  ensureToolbar();
   STATE.settings = await getSettings();
-  if (!STATE.settings.enabled) return;
+  if (!STATE.settings.enabled) {
+    setToolbarStatus("disabled");
+    return;
+  }
   STATE.overlay = new OverlayManager();
+  setToolbarStatus("waiting for board\u2026");
   const boardRoot = await waitForBoard();
   setTimeout(() => runScanWhenIdle(() => scanPage()), INITIAL_SCAN_DELAY_MS);
   setInterval(() => runScanWhenIdle(() => scanPage()), PERIODIC_SCAN_MS);
   if (boardRoot && detectBoard() !== "dat") {
     setupBoardObserver(boardRoot);
   }
+  setupDatScrollRescan();
   setupAutoRefresh();
 }
 chrome.storage.onChanged.addListener((changes, area) => {
   if (area !== "sync" || !changes.loadExtensionSettings) return;
   STATE.settings = changes.loadExtensionSettings.newValue;
   resetEnhancements();
+  STATE.lastScanAt = 0;
   scheduleScan();
   setupAutoRefresh();
 });
 chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
   if (message.type === "RESCAN") {
     resetEnhancements();
-    scanPage();
-    sendResponse({ ok: true, count: STATE.overlay.count() });
+    STATE.lastScanAt = 0;
+    scanPage().then(() => sendResponse({ ok: true, count: STATE.overlay?.count() ?? 0 }));
+    return true;
   }
   if (message.type === "GET_STATUS") {
     sendResponse({
@@ -707,6 +779,7 @@ chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
   }
 });
 async function boot() {
+  ensureToolbar();
   if (document.readyState === "loading") {
     await new Promise((resolve) => document.addEventListener("DOMContentLoaded", resolve, { once: true }));
   }

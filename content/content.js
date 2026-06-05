@@ -3,21 +3,23 @@ import { detectBoard, scanForLoads } from "./parsers.js";
 import { enrichLoad, renderLoadEnhancements } from "./ui.js";
 import { OverlayManager } from "./overlay.js";
 
-export const BUILD_VERSION = "0.4.0";
+export const BUILD_VERSION = "0.4.1";
 
-const SCAN_MIN_INTERVAL_MS = 4000;
-const INITIAL_SCAN_DELAY_MS = 5000;
-const PERIODIC_SCAN_MS = 15000;
+const SCAN_MIN_INTERVAL_MS = 3000;
+const INITIAL_SCAN_DELAY_MS = 2000;
+const PERIODIC_SCAN_MS = 12000;
 
 const STATE = {
   settings: null,
   refreshTimer: null,
   scanTimer: null,
+  scrollTimer: null,
   overlay: null,
   boardObserver: null,
   processedIds: new Set(),
   scanning: false,
-  lastScanAt: 0
+  lastScanAt: 0,
+  started: false
 };
 
 function notifyBackground(type, payload) {
@@ -58,21 +60,28 @@ function isDatSplash() {
 }
 
 function isPageLoading() {
-  return (
-    isDatSplash() ||
-    Boolean(
-      document.querySelector('[aria-busy="true"]') ||
-      document.querySelector(
-        '[class*="loading" i], [class*="spinner" i], [class*="skeleton" i], [data-testid*="loading" i]'
-      )
-    )
+  if (isDatSplash()) return true;
+
+  const agLoading = document.querySelector(".ag-overlay-loading-wrapper:not(.ag-hidden)");
+  if (agLoading) return true;
+
+  const busy = document.querySelector('[aria-busy="true"]');
+  return Boolean(
+    busy &&
+      busy.closest('[role="grid"], [role="treegrid"], .ag-root, main, [class*="search" i]')
   );
 }
 
 function findBoardRoot() {
   const board = detectBoard();
   if (board === "dat") {
-    return document.querySelector('[role="grid"]') || document.querySelector('[role="table"]');
+    return (
+      document.querySelector(".ag-center-cols-container") ||
+      document.querySelector('[role="treegrid"]') ||
+      document.querySelector('[role="grid"]') ||
+      document.querySelector(".ag-root") ||
+      document.querySelector('[role="table"]')
+    );
   }
   return document.querySelector("table") || document.body;
 }
@@ -85,14 +94,24 @@ function runScanWhenIdle(callback) {
   callback();
 }
 
+function setToolbarStatus(text) {
+  const countEl = document.getElementById("le-load-count");
+  if (countEl) countEl.textContent = text;
+}
+
 async function scanPage() {
-  if (!STATE.settings?.enabled || STATE.scanning || isPageLoading()) return;
+  if (!STATE.settings?.enabled || STATE.scanning) return;
+  if (isPageLoading()) {
+    setToolbarStatus("waiting for board…");
+    return;
+  }
 
   const now = Date.now();
   if (now - STATE.lastScanAt < SCAN_MIN_INTERVAL_MS) return;
 
   STATE.scanning = true;
   STATE.lastScanAt = now;
+  setToolbarStatus("scanning…");
 
   try {
     const root = findBoardRoot() || document.body;
@@ -106,7 +125,7 @@ async function scanPage() {
     }
 
     STATE.overlay.repositionAll();
-    updateToolbar(loads.length);
+    setToolbarStatus(`${loads.length} loads`);
   } finally {
     STATE.scanning = false;
   }
@@ -114,39 +133,35 @@ async function scanPage() {
 
 function scheduleScan() {
   if (STATE.scanTimer) clearTimeout(STATE.scanTimer);
-  STATE.scanTimer = setTimeout(() => runScanWhenIdle(() => scanPage()), 1200);
+  STATE.scanTimer = setTimeout(() => runScanWhenIdle(() => scanPage()), 800);
 }
 
 function resetEnhancements() {
   STATE.processedIds.clear();
-  STATE.overlay.clear();
+  STATE.overlay?.clear();
 }
 
-function updateToolbar(count) {
+function ensureToolbar() {
   let toolbar = document.getElementById("loadextension-toolbar");
-  if (!toolbar) {
-    toolbar = document.createElement("div");
-    toolbar.id = "loadextension-toolbar";
-    toolbar.className = "le-toolbar";
-    document.documentElement.appendChild(toolbar);
-  }
+  if (toolbar) return toolbar;
 
-  const rescanBtn = toolbar.querySelector("#le-rescan-btn");
-  if (!rescanBtn) {
-    toolbar.innerHTML = `
-      <img src="${chrome.runtime.getURL("icons/icon16.png")}" alt="" width="16" height="16" />
-      <strong>LoadExtension</strong>
-      <span class="le-version">v${BUILD_VERSION}</span>
-      <span id="le-load-count">0 loads</span>
-      <button type="button" id="le-rescan-btn">Rescan</button>
-    `;
-    toolbar.querySelector("#le-rescan-btn")?.addEventListener("click", () => {
-      resetEnhancements();
-      scanPage();
-    });
-  }
-
-  toolbar.querySelector("#le-load-count").textContent = `${count} loads`;
+  toolbar = document.createElement("div");
+  toolbar.id = "loadextension-toolbar";
+  toolbar.className = "le-toolbar";
+  toolbar.innerHTML = `
+    <img src="${chrome.runtime.getURL("icons/icon16.png")}" alt="" width="16" height="16" />
+    <strong>LoadExtension</strong>
+    <span class="le-version">v${BUILD_VERSION}</span>
+    <span id="le-load-count">starting…</span>
+    <button type="button" id="le-rescan-btn">Rescan</button>
+  `;
+  toolbar.querySelector("#le-rescan-btn")?.addEventListener("click", () => {
+    resetEnhancements();
+    STATE.lastScanAt = 0;
+    scanPage();
+  });
+  document.documentElement.appendChild(toolbar);
+  return toolbar;
 }
 
 function setupAutoRefresh() {
@@ -180,7 +195,20 @@ function setupBoardObserver(root) {
   STATE.boardObserver.observe(root, { childList: true, subtree: true });
 }
 
-async function waitForBoard(maxMs = 20000) {
+function setupDatScrollRescan() {
+  if (detectBoard() !== "dat") return;
+
+  window.addEventListener(
+    "scroll",
+    () => {
+      if (STATE.scrollTimer) clearTimeout(STATE.scrollTimer);
+      STATE.scrollTimer = setTimeout(() => scheduleScan(), 600);
+    },
+    true
+  );
+}
+
+async function waitForBoard(maxMs = 30000) {
   const start = Date.now();
   while (Date.now() - start < maxMs) {
     const root = findBoardRoot();
@@ -191,22 +219,29 @@ async function waitForBoard(maxMs = 20000) {
 }
 
 async function init() {
-  if (isPageLoading() || (detectBoard() === "dat" && isDatSplash())) return;
+  if (STATE.started) return;
+  STATE.started = true;
 
+  ensureToolbar();
   STATE.settings = await getSettings();
-  if (!STATE.settings.enabled) return;
+
+  if (!STATE.settings.enabled) {
+    setToolbarStatus("disabled");
+    return;
+  }
 
   STATE.overlay = new OverlayManager();
+  setToolbarStatus("waiting for board…");
 
   const boardRoot = await waitForBoard();
   setTimeout(() => runScanWhenIdle(() => scanPage()), INITIAL_SCAN_DELAY_MS);
   setInterval(() => runScanWhenIdle(() => scanPage()), PERIODIC_SCAN_MS);
 
-  // DAT's React grid mutates constantly — observing it freezes the tab.
   if (boardRoot && detectBoard() !== "dat") {
     setupBoardObserver(boardRoot);
   }
 
+  setupDatScrollRescan();
   setupAutoRefresh();
 }
 
@@ -214,6 +249,7 @@ chrome.storage.onChanged.addListener((changes, area) => {
   if (area !== "sync" || !changes.loadExtensionSettings) return;
   STATE.settings = changes.loadExtensionSettings.newValue;
   resetEnhancements();
+  STATE.lastScanAt = 0;
   scheduleScan();
   setupAutoRefresh();
 });
@@ -221,8 +257,9 @@ chrome.storage.onChanged.addListener((changes, area) => {
 chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
   if (message.type === "RESCAN") {
     resetEnhancements();
-    scanPage();
-    sendResponse({ ok: true, count: STATE.overlay.count() });
+    STATE.lastScanAt = 0;
+    scanPage().then(() => sendResponse({ ok: true, count: STATE.overlay?.count() ?? 0 }));
+    return true;
   }
   if (message.type === "GET_STATUS") {
     sendResponse({
@@ -233,6 +270,7 @@ chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
 });
 
 export async function boot() {
+  ensureToolbar();
   if (document.readyState === "loading") {
     await new Promise((resolve) => document.addEventListener("DOMContentLoaded", resolve, { once: true }));
   }
