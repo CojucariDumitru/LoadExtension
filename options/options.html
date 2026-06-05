@@ -1,0 +1,77 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>LoadExtension Settings</title>
+    <link rel="stylesheet" href="options.css" />
+  </head>
+  <body>
+    <main>
+      <h1>LoadExtension Settings</h1>
+      <p class="intro">Self-hosted dispatch helper — no monthly subscription. Tune filters, templates, and alerts below.</p>
+
+      <form id="settings-form">
+        <section>
+          <h2>Filters</h2>
+          <div class="grid">
+            <label>Min RPM+ <input type="number" step="0.01" id="minRpm" /></label>
+            <label>Min rate ($) <input type="number" id="minRate" /></label>
+            <label>Min miles <input type="number" id="minMiles" /></label>
+            <label>Max miles (0 = no max) <input type="number" id="maxMiles" /></label>
+          </div>
+          <label class="checkbox"><input type="checkbox" id="hideBelowThreshold" /> Hide loads below thresholds</label>
+          <label class="checkbox"><input type="checkbox" id="highlightGoodLoads" /> Highlight good loads</label>
+        </section>
+
+        <section>
+          <h2>Deadhead (for RPM+)</h2>
+          <div class="grid">
+            <label>Your city <input type="text" id="deadheadCity" placeholder="Chicago" /></label>
+            <label>Your state <input type="text" id="deadheadState" placeholder="IL" maxlength="2" /></label>
+          </div>
+          <p class="note">RPM+ = rate / (trip miles + estimated deadhead). City lookup is basic — add more cities in code or use Google Maps for exact deadhead.</p>
+        </section>
+
+        <section>
+          <h2>Your company info (for email templates)</h2>
+          <div class="grid">
+            <label>Company name <input type="text" id="companyName" /></label>
+            <label>MC number <input type="text" id="mcNumber" /></label>
+            <label>DOT number <input type="text" id="dotNumber" /></label>
+          </div>
+        </section>
+
+        <section>
+          <h2>Email template</h2>
+          <label>Template name <input type="text" id="templateName" /></label>
+          <label>Subject <input type="text" id="templateSubject" /></label>
+          <label>Body <textarea id="templateBody" rows="8"></textarea></label>
+          <p class="note">Variables: {{origin}}, {{destination}}, {{miles}}, {{rate}}, {{rpm}}, {{equipment}}, {{broker}}, {{mcNumber}}, {{dotNumber}}, {{companyName}}</p>
+        </section>
+
+        <section>
+          <h2>Auto refresh</h2>
+          <label>Refresh search every N seconds (0 = off) <input type="number" id="autoRefreshSeconds" min="0" /></label>
+        </section>
+
+        <section>
+          <h2>Telegram alerts (free)</h2>
+          <label class="checkbox"><input type="checkbox" id="telegramEnabled" /> Send Telegram alerts for matching loads</label>
+          <div class="grid">
+            <label>Bot token <input type="password" id="telegramBotToken" autocomplete="off" /></label>
+            <label>Chat ID <input type="text" id="telegramChatId" /></label>
+          </div>
+          <p class="note">Create a bot via @BotFather, then send a message to your bot and use @userinfobot or getUpdates to find your chat ID.</p>
+        </section>
+
+        <div class="actions">
+          <button type="submit">Save settings</button>
+          <span id="status" role="status"></span>
+        </div>
+      </form>
+    </main>
+
+    <script type="module" src="options.js"></script>
+  </body>
+</html>

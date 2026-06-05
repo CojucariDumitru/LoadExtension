@@ -1,0 +1,32 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>LoadExtension</title>
+    <link rel="stylesheet" href="popup.css" />
+  </head>
+  <body>
+    <header>
+      <h1>LoadExtension</h1>
+      <label class="toggle">
+        <input type="checkbox" id="enabled" />
+        <span>Enabled</span>
+      </label>
+    </header>
+
+    <section class="stats">
+      <div><strong id="load-count">0</strong><span>loads enhanced</span></div>
+      <div><strong id="min-rpm">0</strong><span>min RPM+</span></div>
+    </section>
+
+    <section class="actions">
+      <button id="rescan" type="button">Rescan page</button>
+      <button id="open-options" type="button" class="secondary">Settings</button>
+    </section>
+
+    <p class="hint">Open a DAT / Truckstop search tab, then rescan if loads don't appear immediately.</p>
+
+    <script type="module" src="popup.js"></script>
+  </body>
+</html>
