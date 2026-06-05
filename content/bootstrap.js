@@ -1,22 +1,37 @@
 /**
  * Tiny entry script (not bundled). Chrome loads this first.
- * Waits for DAT's splash screen to finish before importing the heavy module.
  */
+const BUILD = "0.4.3";
 const MODULE = chrome.runtime.getURL("dist/content.js");
+
+function showBootStatus(text) {
+  let el = document.getElementById("loadextension-toolbar");
+  if (!el) {
+    el = document.createElement("div");
+    el.id = "loadextension-toolbar";
+    el.className = "le-toolbar";
+    document.documentElement.appendChild(el);
+  }
+  el.innerHTML = `
+    <img src="${chrome.runtime.getURL("icons/icon16.png")}" alt="" width="16" height="16" />
+    <strong>LoadExtension</strong>
+    <span class="le-version">v${BUILD}</span>
+    <span id="le-load-count">${text}</span>
+  `;
+}
 
 function isDatHost() {
   return /one\.dat\.com|power\.dat\.com/.test(location.hostname);
 }
 
 function isDatSplash() {
-  const text = document.body?.textContent || "";
-  return /Loading DAT One/i.test(text);
+  return /Loading DAT One/i.test(document.body?.textContent || "");
 }
 
 function hasBoard() {
   return Boolean(
     document.querySelector(
-      '[role="grid"], [role="treegrid"], .ag-root, .ag-center-cols-container, [role="table"]'
+      '[role="grid"], [role="treegrid"], [role="table"], [role="row"], .ag-root, .ag-center-cols-container'
     )
   );
 }
@@ -24,26 +39,31 @@ function hasBoard() {
 async function waitForDatReady() {
   if (!isDatHost()) return;
 
+  showBootStatus("waiting for DAT…");
   const deadline = Date.now() + 90000;
   while (Date.now() < deadline) {
-    if (!isDatSplash() && (hasBoard() || location.pathname.includes("search"))) return;
+    if (!isDatSplash() && hasBoard()) return;
     await new Promise((resolve) => setTimeout(resolve, 500));
   }
 }
 
 async function start() {
   try {
+    showBootStatus("starting…");
     await waitForDatReady();
     if (isDatHost()) {
-      await new Promise((resolve) => setTimeout(resolve, 2000));
+      await new Promise((resolve) => setTimeout(resolve, 1500));
     }
 
     const mod = await import(MODULE);
     if (typeof mod.boot === "function") {
       await mod.boot();
+    } else {
+      showBootStatus("boot missing — rebuild");
     }
   } catch (error) {
     console.error("[LoadExtension] bootstrap failed:", error);
+    showBootStatus("error — rebuild extension");
   }
 }
 

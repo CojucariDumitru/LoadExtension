@@ -119,6 +119,8 @@ function guessRate(text, board = "generic") {
     return Math.max(...dollarMatches.map((m) => parseMoney(m[1])));
   }
   if (board !== "dat") return 0;
+  const perMile = [...text.matchAll(/\$\s*([\d.]+)\s*\/\s*mi\b/gi)];
+  if (perMile.length) return 0;
   const plainMatches = [...text.matchAll(/\b([\d,]{3,6})\b/g)];
   const rates = plainMatches.map((m) => parseMoney(m[1])).filter((value) => value >= 150 && value <= 25e3);
   return rates.length ? Math.max(...rates) : 0;
@@ -138,7 +140,7 @@ function guessMiles(text, board = "generic") {
   return 0;
 }
 function guessEquipment(text) {
-  const types = ["Van", "Reefer", "Flatbed", "Stepdeck", "Power Only", "Box Truck", "Hotshot"];
+  const types = ["Van", "Reefer", "Flatbed", "Stepdeck", "Power Only", "Box Truck", "Hotshot", "Decks"];
   const upper = text.toUpperCase();
   for (const type of types) {
     if (upper.includes(type.toUpperCase())) return type;
@@ -154,10 +156,21 @@ function detectBoard() {
   return "generic";
 }
 function rowText(element) {
-  return element.textContent || "";
+  return (element.textContent || "").replace(/\s+/g, " ").trim();
 }
-function isAgGridRow(element) {
-  return element.classList?.contains("ag-row") && element.getAttribute("role") === "row";
+function isDatRowElement(element) {
+  if (!(element instanceof HTMLElement)) return false;
+  if (element.closest("#loadextension-overlay-root, #loadextension-toolbar, .le-overlay-chip")) {
+    return false;
+  }
+  if (element.matches("thead, th, [role='columnheader'], nav, header, footer")) return false;
+  const role = element.getAttribute("role");
+  const isRow = role === "row" || element.classList.contains("ag-row") || element.matches("table tbody tr");
+  if (!isRow) return false;
+  const parentRow = element.parentElement?.closest('[role="row"], .ag-row, table tbody tr');
+  if (parentRow && parentRow !== element) return false;
+  const rect = element.getBoundingClientRect();
+  return rect.height >= 16 && rect.height <= 320 && rect.width >= 80 && rect.height > 0;
 }
 function isSafeRowElement(element) {
   if (!(element instanceof HTMLElement)) return false;
@@ -166,11 +179,7 @@ function isSafeRowElement(element) {
     return false;
   }
   if (element.matches("thead, th, script, style, nav, header, footer, html, body")) return false;
-  const board = detectBoard();
-  if (board === "dat" && isAgGridRow(element)) {
-    const rect2 = element.getBoundingClientRect();
-    return rect2.height >= 20 && rect2.height <= 200 && rect2.width >= 100;
-  }
+  if (detectBoard() === "dat" && isDatRowElement(element)) return true;
   const rect = element.getBoundingClientRect();
   if (rect.height < 28 || rect.height > 160) return false;
   if (rect.width < 200) return false;
@@ -182,7 +191,8 @@ function isLikelyLoadRow(element) {
   if (!isSafeRowElement(element)) return false;
   const board = detectBoard();
   const text = rowText(element);
-  if (text.length < 16 || text.length > 1200) return false;
+  if (text.length < 12 || text.length > 2e3) return false;
+  if (/^(origin|destination|rate|company|age|trip|deadhead|equipment)$/i.test(text)) return false;
   const cities = extractCityPairs(text);
   if (cities.length < 2) return false;
   return guessRate(text, board) > 0 || guessMiles(text, board) > 0;
@@ -190,12 +200,14 @@ function isLikelyLoadRow(element) {
 function selectorsForBoard(board) {
   if (board === "dat") {
     return [
+      '[role="rowgroup"] [role="row"]',
+      '[role="grid"] [role="row"]',
+      '[role="treegrid"] [role="row"]',
+      '[role="table"] [role="row"]',
       ".ag-center-cols-container .ag-row",
       '.ag-row[role="row"]',
-      '[role="treegrid"] [role="row"]',
-      '[role="grid"] [role="row"]',
-      '[role="table"] [role="row"]',
-      "table tbody tr"
+      "table tbody tr",
+      '[role="row"]'
     ];
   }
   if (board === "truckstop") {
@@ -203,7 +215,7 @@ function selectorsForBoard(board) {
   }
   return ["table tbody tr", '[role="row"]'];
 }
-var MAX_ROWS_PER_SCAN = 120;
+var MAX_ROWS_PER_SCAN = 150;
 function findRowCandidates(root) {
   const board = detectBoard();
   const selectors = selectorsForBoard(board);
@@ -231,13 +243,15 @@ function parseLoadFromElement(element) {
   const dotMatch = text.match(DOT_RE);
   const mcMatches = [...text.matchAll(/\bMC\s*#?\s*(\d{5,8})\b/gi)].map((m) => m[1]);
   const brokerMcNumber = mcMatches[0] || "";
-  const brokerLine = text.split("\n").map((line) => line.trim()).find((line) => /broker|logistics|freight|transport|inc\.?|llc/i.test(line));
+  const brokerLine = text.split(/\s{2,}|\n/).map((line) => line.trim()).find((line) => /logistics|freight|transport|broker|inc\.?|llc|services/i.test(line));
   return {
     id: uniqueId([origin, destination, rate, miles, brokerLine]),
     origin,
     originCity: cities[0]?.city || "",
     originState: cities[0]?.state || "",
     destination,
+    destinationCity: cities[1]?.city || "",
+    destinationState: cities[1]?.state || "",
     rate,
     miles,
     equipment: guessEquipment(text),
@@ -251,9 +265,8 @@ function parseLoadFromElement(element) {
   };
 }
 function scanForLoads(root = document.body) {
-  const board = detectBoard();
   const roots = [root];
-  if (board === "dat" && root !== document.body) {
+  if (detectBoard() === "dat" && root !== document.body) {
     roots.push(document.body);
   }
   const seen = /* @__PURE__ */ new Set();
@@ -564,7 +577,7 @@ var OverlayManager = class {
 };
 
 // content/content.js
-var BUILD_VERSION = "0.4.2";
+var BUILD_VERSION = "0.4.3";
 var SCAN_MIN_INTERVAL_MS = 3e3;
 var INITIAL_SCAN_DELAY_MS = 2e3;
 var PERIODIC_SCAN_MS = 12e3;

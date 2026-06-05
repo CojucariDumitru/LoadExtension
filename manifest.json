@@ -1,7 +1,7 @@
 {
   "manifest_version": 3,
   "name": "LoadExtension",
-  "version": "0.4.2",
+  "version": "0.4.3",
   "description": "Dispatch helper for DAT — RPM filters, RTS credit, tolls, email, and maps.",
   "permissions": ["storage", "tabs", "cookies"],
   "host_permissions": [
