@@ -13,15 +13,18 @@ const hasOldToolbar = content.includes("loads scanned") || content.includes("Min
 const popupBundled = popup.length > 1000 && !popup.includes("import ");
 const rtsBundled = rtsCapture.length > 500 && !rtsCapture.includes("import ");
 
+const REQUIRED = "0.4.2";
+
 console.log(`\nLoadExtension build check`);
-console.log(`  manifest version : ${version}`);
+console.log(`  your version     : ${version}`);
+console.log(`  required version : ${REQUIRED}`);
 console.log(`  bootstrap entry  : ${usesBootstrap ? "yes" : "NO"}`);
-console.log(`  bundled popup    : ${popupBundled ? "yes" : "NO"}`);
-console.log(`  bundled rts      : ${usesBundledRts && rtsBundled ? "yes" : "NO"}`);
-console.log(`  dist/content.js  : ${(content.length / 1024).toFixed(1)}kb`);
+console.log(`  bundled popup    : ${popupBundled ? "yes" : "NO — missing dist/popup.js"}`);
+console.log(`  bundled rts      : ${usesBundledRts && rtsBundled ? "yes" : "NO — missing dist/rts-capture.js"}`);
+console.log(`  dist/content.js  : ${(content.length / 1024).toFixed(1)}kb (need ~26kb)`);
 
 if (
-  version === "0.4.2" &&
+  version === REQUIRED &&
   usesBootstrap &&
   usesBundledRts &&
   popupBundled &&
@@ -33,5 +36,6 @@ if (
   process.exit(0);
 }
 
-console.log(`  status           : OUTDATED — run: git pull origin main && npm run build\n`);
+console.log(`  status           : OUTDATED`);
+console.log(`  fix              : powershell -ExecutionPolicy Bypass -File scripts/update.ps1\n`);
 process.exit(1);
