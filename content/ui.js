@@ -1,7 +1,6 @@
 import { calculateRpm, estimateDeadheadMiles } from "../shared/rpm.js";
 import { applyTemplate, buildMailtoUrl } from "../shared/email.js";
 import { buildGoogleMapsRouteUrl, buildFmcsaSaferUrl } from "../shared/maps.js";
-import { buildRtsProSearchUrl } from "../shared/rts.js";
 import { gradeClass } from "../shared/credit-cache.js";
 import { netRpmAfterTolls } from "../shared/toll.js";
 
@@ -76,27 +75,27 @@ export function attachAsyncInsights(bar, load, settings) {
 
         if (credit.pending) {
           bar.appendChild(
-            createButton("RTS", "Open RTS Pro credit search", () => {
-              window.open(credit.rtsUrl || buildRtsProSearchUrl(load), "_blank", "noopener");
+            createButton(credit.needsLogin ? "Connect RTS" : "RTS", credit.needsLogin ? "Log into RTS Pro" : "Open RTS credit search", () => {
+              window.open(credit.rtsUrl || "https://rtspro.com/credit/search", "_blank", "noopener");
             })
           );
           return;
         }
 
-        if (credit.grade) {
+        if (credit.grade || credit.averageDaysToPay != null) {
+          const label = credit.grade
+            ? `RTS ${credit.grade}`
+            : `${credit.averageDaysToPay}d pay`;
           bar.appendChild(
             createBadge(
               `le-credit-badge ${gradeClass(credit.grade)}`,
-              `RTS ${credit.grade}`,
+              label,
               credit.averageDaysToPay
                 ? `Avg days to pay: ${credit.averageDaysToPay}`
                 : "RTS factoring grade"
             )
           );
-        } else if (credit.averageDaysToPay != null) {
-          bar.appendChild(
-            createBadge("le-credit-badge le-grade-unknown", `${credit.averageDaysToPay}d pay`)
-          );
+          return;
         }
       })
       .catch(() => {});
@@ -136,7 +135,6 @@ export function attachAsyncInsights(bar, load, settings) {
 export function renderLoadEnhancements(load, settings) {
   const bar = document.createElement("div");
   bar.className = "le-load-bar";
-  bar.dataset.loadextensionProcessed = "true";
 
   const badge = document.createElement("span");
   badge.className = `le-rpm-badge ${load.passesFilters ? "le-good" : "le-weak"}`;
@@ -191,11 +189,10 @@ export function renderLoadEnhancements(load, settings) {
 }
 
 export function applyRowStyles(row, load, settings) {
-  row.dataset.loadextensionProcessed = "true";
-  row.classList.remove("le-row-good", "le-row-weak", "le-row-hidden");
+  row.classList.remove("le-row-good", "le-row-weak", "le-row-dim");
 
   if (!load.passesFilters && settings.hideBelowThreshold) {
-    row.classList.add("le-row-hidden");
+    row.classList.add("le-row-dim");
     return;
   }
 

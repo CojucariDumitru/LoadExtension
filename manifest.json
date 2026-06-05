@@ -1,9 +1,9 @@
 {
   "manifest_version": 3,
   "name": "LoadExtension",
-  "version": "0.2.0",
-  "description": "Self-hosted dispatch helper for load boards — RPM filters, one-click email, maps, and Telegram alerts.",
-  "permissions": ["storage", "tabs"],
+  "version": "0.3.0",
+  "description": "Dispatch helper for DAT — RPM filters, RTS credit, tolls, email, and maps.",
+  "permissions": ["storage", "tabs", "cookies"],
   "host_permissions": [
     "https://one.dat.com/*",
     "https://power.dat.com/*",
@@ -34,6 +34,17 @@
     "48": "icons/icon48.png",
     "128": "icons/icon128.png"
   },
+  "web_accessible_resources": [
+    {
+      "resources": ["icons/*"],
+      "matches": [
+        "https://one.dat.com/*",
+        "https://power.dat.com/*",
+        "https://*.truckstop.com/*",
+        "https://*.trucksmarter.com/*"
+      ]
+    }
+  ],
   "content_scripts": [
     {
       "matches": [
@@ -50,6 +61,12 @@
       "matches": ["https://rtspro.com/*"],
       "js": ["content/rts-capture.js"],
       "run_at": "document_idle"
+    },
+    {
+      "matches": ["https://rtspro.com/*"],
+      "js": ["content/rts-hook.js"],
+      "run_at": "document_start",
+      "world": "MAIN"
     }
   ]
 }

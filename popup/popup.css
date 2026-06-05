@@ -9,13 +9,33 @@ body {
 header {
   display: flex;
   align-items: center;
-  justify-content: space-between;
+  gap: 10px;
   margin-bottom: 12px;
+}
+
+.logo {
+  width: 40px;
+  height: 40px;
+  border-radius: 10px;
 }
 
 h1 {
   margin: 0;
-  font-size: 16px;
+  font-size: 15px;
+}
+
+.rts-status {
+  margin: 2px 0 0;
+  font-size: 11px;
+  color: #64748b;
+}
+
+.rts-status.connected {
+  color: #166534;
+}
+
+.rts-status.disconnected {
+  color: #b45309;
 }
 
 .toggle {

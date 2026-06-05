@@ -1,11 +1,15 @@
 import { getSettings } from "../shared/storage.js";
 import { scanForLoads } from "./parsers.js";
 import { applyRowStyles, enrichLoad, renderLoadEnhancements } from "./ui.js";
+import { OverlayManager } from "./overlay.js";
 
 const STATE = {
   settings: null,
   refreshTimer: null,
-  observer: null
+  scanTimer: null,
+  overlay: null,
+  processedIds: new Set(),
+  scanning: false
 };
 
 function notifyBackground(type, payload) {
@@ -13,11 +17,14 @@ function notifyBackground(type, payload) {
 }
 
 function processLoadRow(load) {
-  if (!load.element || load.element.querySelector(".le-load-bar")) return;
+  if (!load.element || STATE.processedIds.has(load.id)) return;
 
   const enriched = enrichLoad(load, STATE.settings);
   applyRowStyles(load.element, enriched, STATE.settings);
-  load.element.appendChild(renderLoadEnhancements(enriched, STATE.settings));
+
+  const bar = renderLoadEnhancements(enriched, STATE.settings);
+  STATE.overlay.mount(load.id, load.element, bar);
+  STATE.processedIds.add(load.id);
 
   if (enriched.passesFilters) {
     notifyBackground("LOAD_MATCH", {
@@ -34,14 +41,32 @@ function processLoadRow(load) {
 }
 
 function scanPage() {
-  if (!STATE.settings?.enabled) return;
+  if (!STATE.settings?.enabled || STATE.scanning) return;
+  STATE.scanning = true;
 
-  const loads = scanForLoads(document.body);
-  for (const load of loads) {
-    processLoadRow(load);
+  try {
+    const loads = scanForLoads(document.body);
+    for (const load of loads) {
+      processLoadRow(load);
+    }
+    STATE.overlay.repositionAll();
+    updateToolbar(loads.length);
+  } finally {
+    STATE.scanning = false;
   }
+}
 
-  updateToolbar(loads.length);
+function scheduleScan() {
+  if (STATE.scanTimer) clearTimeout(STATE.scanTimer);
+  STATE.scanTimer = setTimeout(scanPage, 800);
+}
+
+function resetEnhancements() {
+  STATE.processedIds.clear();
+  STATE.overlay.clear();
+  document.querySelectorAll(".le-row-good, .le-row-weak, .le-row-dim").forEach((el) => {
+    el.classList.remove("le-row-good", "le-row-weak", "le-row-dim");
+  });
 }
 
 function updateToolbar(count) {
@@ -50,24 +75,24 @@ function updateToolbar(count) {
     toolbar = document.createElement("div");
     toolbar.id = "loadextension-toolbar";
     toolbar.className = "le-toolbar";
-    document.body.appendChild(toolbar);
+    document.documentElement.appendChild(toolbar);
   }
 
-  toolbar.innerHTML = `
-    <strong>LoadExtension</strong>
-    <span>${count} loads scanned</span>
-    <span>Min RPM: ${STATE.settings.minRpm}</span>
-    <button type="button" id="le-rescan-btn">Rescan</button>
-  `;
-
-  toolbar.querySelector("#le-rescan-btn")?.addEventListener("click", () => {
-    document.querySelectorAll("[data-loadextension-processed]").forEach((el) => {
-      el.classList.remove("le-row-good", "le-row-weak", "le-row-hidden");
-      el.removeAttribute("data-loadextension-processed");
-      el.querySelector(".le-load-bar")?.remove();
+  const rescanBtn = toolbar.querySelector("#le-rescan-btn");
+  if (!rescanBtn) {
+    toolbar.innerHTML = `
+      <img src="${chrome.runtime.getURL("icons/icon16.png")}" alt="" width="16" height="16" />
+      <strong>LoadExtension</strong>
+      <span id="le-load-count">0 loads</span>
+      <button type="button" id="le-rescan-btn">Rescan</button>
+    `;
+    toolbar.querySelector("#le-rescan-btn")?.addEventListener("click", () => {
+      resetEnhancements();
+      scanPage();
     });
-    scanPage();
-  });
+  }
+
+  toolbar.querySelector("#le-load-count").textContent = `${count} loads`;
 }
 
 function setupAutoRefresh() {
@@ -82,49 +107,53 @@ function setupAutoRefresh() {
   }
 }
 
-function setupObserver() {
-  if (STATE.observer) STATE.observer.disconnect();
-
-  STATE.observer = new MutationObserver(() => {
-    scanPage();
+function setupLightObserver() {
+  const observer = new MutationObserver((mutations) => {
+    const fromUs = mutations.every((mutation) =>
+      [...mutation.addedNodes].every(
+        (node) =>
+          node instanceof HTMLElement &&
+          (node.id === "loadextension-overlay-root" ||
+            node.id === "loadextension-toolbar" ||
+            node.classList?.contains("le-overlay-chip"))
+      )
+    );
+    if (!fromUs) scheduleScan();
   });
 
-  STATE.observer.observe(document.body, {
-    childList: true,
-    subtree: true
-  });
+  observer.observe(document.body, { childList: true, subtree: true });
 }
 
 async function init() {
   STATE.settings = await getSettings();
+  STATE.overlay = new OverlayManager();
+
   if (!STATE.settings.enabled) return;
 
-  scanPage();
-  setupObserver();
+  setTimeout(scanPage, 1500);
+  setInterval(scanPage, 5000);
+  setupLightObserver();
   setupAutoRefresh();
 }
 
 chrome.storage.onChanged.addListener((changes, area) => {
   if (area !== "sync" || !changes.loadExtensionSettings) return;
   STATE.settings = changes.loadExtensionSettings.newValue;
-  document.querySelectorAll("[data-loadextension-processed]").forEach((el) => {
-    el.classList.remove("le-row-good", "le-row-weak", "le-row-hidden");
-    el.removeAttribute("data-loadextension-processed");
-    el.querySelector(".le-load-bar")?.remove();
-  });
-  scanPage();
+  resetEnhancements();
+  scheduleScan();
   setupAutoRefresh();
 });
 
 chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
   if (message.type === "RESCAN") {
+    resetEnhancements();
     scanPage();
-    sendResponse({ ok: true, count: document.querySelectorAll(".le-load-bar").length });
+    sendResponse({ ok: true, count: STATE.overlay.count() });
   }
   if (message.type === "GET_STATUS") {
     sendResponse({
       enabled: STATE.settings?.enabled ?? false,
-      loads: document.querySelectorAll(".le-load-bar").length
+      loads: STATE.overlay?.count() ?? 0
     });
   }
 });

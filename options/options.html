@@ -56,18 +56,20 @@
         </section>
 
         <section>
-          <h2>RTS factoring scores</h2>
-          <label class="checkbox"><input type="checkbox" id="rtsEnabled" /> Show RTS credit grades on loads</label>
-          <div class="grid">
-            <label>RTS webservice User ID <input type="text" id="rtsUserId" autocomplete="off" /></label>
-            <label>RTS webservice password <input type="password" id="rtsUserPass" autocomplete="off" /></label>
-          </div>
+          <h2>RTS factoring (built-in)</h2>
+          <label class="checkbox"><input type="checkbox" id="rtsEnabled" /> Show RTS credit on loads</label>
           <p class="note">
-            Option A — <strong>Automatic lookup</strong>: RTS includes a legacy webservice at webservice.rtscredit.com.
-            Call RTS support (855-851-1005) and ask for your <em>webservice User ID and password</em> (separate from rtspro.com login).
-            Option B — <strong>Manual cache</strong>: stay logged into <a href="https://rtspro.com/credit/search" target="_blank" rel="noopener">rtspro.com/credit</a>.
-            When you open a broker credit page, the extension caches the grade for inline display on DAT.
+            Click <strong>Connect RTS</strong> in the extension popup and log into
+            <a href="https://rtspro.com/credit/search" target="_blank" rel="noopener">rtspro.com</a>.
+            No extra credentials needed — the extension uses your RTS login session, similar to LoadHunter.
           </p>
+          <details>
+            <summary>Advanced: RTS webservice credentials (optional fallback)</summary>
+            <div class="grid">
+              <label>Webservice User ID <input type="text" id="rtsUserId" autocomplete="off" /></label>
+              <label>Webservice password <input type="password" id="rtsUserPass" autocomplete="off" /></label>
+            </div>
+          </details>
         </section>
 
         <section>

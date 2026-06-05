@@ -24,11 +24,7 @@ function guessRate(text) {
 }
 
 function guessMiles(text) {
-  const mileMatches = [
-    ...text.matchAll(/([\d,]+)\s*(?:mi|miles)\b/gi),
-    ...text.matchAll(/\b([\d,]{2,4})\b/g)
-  ];
-
+  const mileMatches = [...text.matchAll(/([\d,]+)\s*(?:mi|miles)\b/gi)];
   for (const match of mileMatches) {
     const value = parseMiles(match[1]);
     if (value >= 50 && value <= 3500) return value;
@@ -54,32 +50,49 @@ export function detectBoard() {
   return "generic";
 }
 
-function isLikelyLoadRow(element) {
+function isSafeRowElement(element) {
   if (!(element instanceof HTMLElement)) return false;
-  if (element.closest("[data-loadextension-processed]")) return false;
-  if (element.matches("thead, th, script, style, nav, header, footer")) return false;
+  if (element.id === "loadextension-overlay-root") return false;
+  if (element.closest("#loadextension-overlay-root, #loadextension-toolbar, .le-overlay-chip")) {
+    return false;
+  }
+  if (element.matches("thead, th, script, style, nav, header, footer, html, body")) return false;
+
+  const rect = element.getBoundingClientRect();
+  if (rect.height < 28 || rect.height > 160) return false;
+  if (rect.width < 200) return false;
+
+  if (element.querySelector('[role="row"], tr, .le-overlay-chip')) return false;
+  if (element.children.length > 30) return false;
+
+  return true;
+}
+
+function isLikelyLoadRow(element) {
+  if (!isSafeRowElement(element)) return false;
 
   const text = element.innerText || "";
-  if (text.length < 20 || text.length > 2000) return false;
+  if (text.length < 24 || text.length > 900) return false;
 
   const cities = extractCityPairs(text);
   if (cities.length < 2) return false;
 
-  const hasRateOrMiles = guessRate(text) > 0 || guessMiles(text) > 0;
-  return hasRateOrMiles;
+  return guessRate(text) > 0 || guessMiles(text) > 0;
+}
+
+function selectorsForBoard(board) {
+  if (board === "dat") {
+    return ['[role="grid"] [role="row"]', '[role="table"] [role="row"]', "table tbody tr"];
+  }
+  if (board === "truckstop") {
+    return ["table tbody tr", '[role="row"]'];
+  }
+  return ["table tbody tr", '[role="row"]'];
 }
 
 function findRowCandidates(root) {
-  const selectors = [
-    "tr",
-    "[role='row']",
-    "[data-testid*='load']",
-    "[class*='load']",
-    "[class*='row']",
-    "article",
-    "li"
-  ];
-
+  const board = detectBoard();
+  const selectors = selectorsForBoard(board);
   const seen = new Set();
   const rows = [];
 

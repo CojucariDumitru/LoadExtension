@@ -1,3 +1,25 @@
+.le-overlay-root {
+  position: fixed;
+  inset: 0;
+  z-index: 2147483645;
+  pointer-events: none;
+}
+
+.le-overlay-chip {
+  position: fixed;
+  z-index: 2147483646;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 4px;
+  max-width: min(420px, 40vw);
+  padding: 4px 6px;
+  border-radius: 8px;
+  background: rgba(255, 255, 255, 0.96);
+  box-shadow: 0 4px 16px rgba(15, 23, 42, 0.18);
+  pointer-events: auto;
+}
+
 .le-toolbar {
   position: fixed;
   top: 12px;
@@ -12,6 +34,11 @@
   color: #f8fafc;
   font: 12px/1.4 system-ui, sans-serif;
   box-shadow: 0 8px 24px rgba(15, 23, 42, 0.35);
+  pointer-events: auto;
+}
+
+.le-toolbar img {
+  border-radius: 4px;
 }
 
 .le-toolbar button {
@@ -26,10 +53,8 @@
 .le-load-bar {
   display: flex;
   flex-wrap: wrap;
-  gap: 6px;
-  margin-top: 6px;
-  padding-top: 6px;
-  border-top: 1px dashed rgba(37, 99, 235, 0.35);
+  gap: 4px;
+  align-items: center;
 }
 
 .le-rpm-badge {
@@ -66,16 +91,15 @@
 }
 
 .le-row-good {
-  outline: 2px solid rgba(34, 197, 94, 0.45) !important;
-  outline-offset: -2px;
+  box-shadow: inset 3px 0 0 #22c55e !important;
 }
 
 .le-row-weak {
-  opacity: 0.72;
+  opacity: 0.88;
 }
 
-.le-row-hidden {
-  display: none !important;
+.le-row-dim {
+  opacity: 0.45;
 }
 
 .le-credit-badge,

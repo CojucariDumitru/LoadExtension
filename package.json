@@ -5,9 +5,11 @@
   "type": "module",
   "scripts": {
     "build": "node scripts/build.mjs",
-    "watch": "node scripts/build.mjs && chokidar 'content/**' 'background/**' 'shared/**' -c 'node scripts/build.mjs'"
+    "icons": "node scripts/generate-icons.mjs",
+    "prepare": "npm run icons && npm run build"
   },
   "devDependencies": {
+    "@resvg/resvg-js": "^2.6.2",
     "esbuild": "^0.25.0"
   }
 }

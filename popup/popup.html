@@ -8,10 +8,14 @@
   </head>
   <body>
     <header>
-      <h1>LoadExtension</h1>
+      <img src="../icons/icon48.png" alt="LoadExtension" class="logo" />
+      <div>
+        <h1>LoadExtension</h1>
+        <p id="rts-status" class="rts-status">RTS: checking…</p>
+      </div>
       <label class="toggle">
         <input type="checkbox" id="enabled" />
-        <span>Enabled</span>
+        <span>On</span>
       </label>
     </header>
 
@@ -21,11 +25,12 @@
     </section>
 
     <section class="actions">
-      <button id="rescan" type="button">Rescan page</button>
+      <button id="connect-rts" type="button">Connect RTS</button>
+      <button id="rescan" type="button">Rescan DAT</button>
       <button id="open-options" type="button" class="secondary">Settings</button>
     </section>
 
-    <p class="hint">Open a DAT / Truckstop search tab, then rescan if loads don't appear immediately.</p>
+    <p class="hint">Log into RTS once — credit scores appear on DAT automatically, like LoadHunter.</p>
 
     <script type="module" src="popup.js"></script>
   </body>

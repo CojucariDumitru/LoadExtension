@@ -7,6 +7,7 @@ import {
   setCachedCredit
 } from "../shared/credit-cache.js";
 import { buildRtsProSearchUrl, lookupBrokerCredit } from "../shared/rts.js";
+import { hasRtsSession, lookupRtsViaSession } from "../shared/rts-session.js";
 import { calculateRouteTolls } from "../shared/toll.js";
 
 const SEEN_TTL_MS = 24 * 60 * 60 * 1000;
@@ -50,9 +51,21 @@ async function lookupCredit(payload) {
   const settings = await getSettings();
   const key = creditCacheKey(payload);
   const cached = await getCachedCredit(getLocal, key);
-  if (cached) return cached;
+  if (cached && !cached.pending) return cached;
 
-  if (settings.rts?.enabled && settings.rts.userId && settings.rts.userPass) {
+  if (settings.rts?.enabled && (await hasRtsSession())) {
+    try {
+      const credit = await lookupRtsViaSession(payload);
+      if (credit) {
+        await setCachedCredit(setLocal, getLocal, key, credit);
+        return credit;
+      }
+    } catch (error) {
+      console.warn("[LoadExtension] RTS session lookup failed:", error.message);
+    }
+  }
+
+  if (settings.rts?.userId && settings.rts?.userPass) {
     try {
       const credit = await lookupBrokerCredit({
         userId: settings.rts.userId,
@@ -71,6 +84,7 @@ async function lookupCredit(payload) {
 
   return {
     pending: true,
+    needsLogin: !(await hasRtsSession()),
     rtsUrl: buildRtsProSearchUrl(payload)
   };
 }
@@ -112,6 +126,13 @@ chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
 
   if (message.type === "GET_SETTINGS") {
     getSettings().then((settings) => sendResponse({ settings }));
+    return true;
+  }
+
+  if (message.type === "GET_RTS_STATUS") {
+    hasRtsSession()
+      .then((connected) => sendResponse({ ok: true, connected }))
+      .catch((error) => sendResponse({ ok: false, error: error.message }));
     return true;
   }
 
