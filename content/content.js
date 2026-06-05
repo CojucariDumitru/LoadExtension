@@ -1,15 +1,21 @@
 import { getSettings } from "../shared/storage.js";
-import { scanForLoads } from "./parsers.js";
-import { applyRowStyles, enrichLoad, renderLoadEnhancements } from "./ui.js";
+import { detectBoard, scanForLoads } from "./parsers.js";
+import { enrichLoad, renderLoadEnhancements } from "./ui.js";
 import { OverlayManager } from "./overlay.js";
+
+const SCAN_MIN_INTERVAL_MS = 2000;
+const INITIAL_SCAN_DELAY_MS = 3000;
+const PERIODIC_SCAN_MS = 8000;
 
 const STATE = {
   settings: null,
   refreshTimer: null,
   scanTimer: null,
   overlay: null,
+  boardObserver: null,
   processedIds: new Set(),
-  scanning: false
+  scanning: false,
+  lastScanAt: 0
 };
 
 function notifyBackground(type, payload) {
@@ -20,9 +26,14 @@ function processLoadRow(load) {
   if (!load.element || STATE.processedIds.has(load.id)) return;
 
   const enriched = enrichLoad(load, STATE.settings);
-  applyRowStyles(load.element, enriched, STATE.settings);
+  if (!enriched.passesFilters && STATE.settings.hideBelowThreshold) return;
 
   const bar = renderLoadEnhancements(enriched, STATE.settings);
+  if (enriched.passesFilters && STATE.settings.highlightGoodLoads) {
+    bar.classList.add("le-chip-good");
+  } else if (!enriched.passesFilters) {
+    bar.classList.add("le-chip-weak");
+  }
   STATE.overlay.mount(load.id, load.element, bar);
   STATE.processedIds.add(load.id);
 
@@ -40,12 +51,43 @@ function processLoadRow(load) {
   }
 }
 
+function isPageLoading() {
+  return Boolean(
+    document.querySelector('[aria-busy="true"]') ||
+    document.querySelector(
+      '[class*="loading" i], [class*="spinner" i], [class*="skeleton" i], [data-testid*="loading" i]'
+    )
+  );
+}
+
+function findBoardRoot() {
+  const board = detectBoard();
+  if (board === "dat") {
+    return document.querySelector('[role="grid"]') || document.querySelector('[role="table"]');
+  }
+  return document.querySelector("table") || document.body;
+}
+
+function runScanWhenIdle(callback) {
+  if ("requestIdleCallback" in window) {
+    requestIdleCallback(() => callback(), { timeout: 2000 });
+    return;
+  }
+  callback();
+}
+
 function scanPage() {
-  if (!STATE.settings?.enabled || STATE.scanning) return;
+  if (!STATE.settings?.enabled || STATE.scanning || isPageLoading()) return;
+
+  const now = Date.now();
+  if (now - STATE.lastScanAt < SCAN_MIN_INTERVAL_MS) return;
+
   STATE.scanning = true;
+  STATE.lastScanAt = now;
 
   try {
-    const loads = scanForLoads(document.body);
+    const root = findBoardRoot() || document.body;
+    const loads = scanForLoads(root);
     for (const load of loads) {
       processLoadRow(load);
     }
@@ -58,15 +100,12 @@ function scanPage() {
 
 function scheduleScan() {
   if (STATE.scanTimer) clearTimeout(STATE.scanTimer);
-  STATE.scanTimer = setTimeout(scanPage, 800);
+  STATE.scanTimer = setTimeout(() => runScanWhenIdle(scanPage), 1200);
 }
 
 function resetEnhancements() {
   STATE.processedIds.clear();
   STATE.overlay.clear();
-  document.querySelectorAll(".le-row-good, .le-row-weak, .le-row-dim").forEach((el) => {
-    el.classList.remove("le-row-good", "le-row-weak", "le-row-dim");
-  });
 }
 
 function updateToolbar(count) {
@@ -107,8 +146,10 @@ function setupAutoRefresh() {
   }
 }
 
-function setupLightObserver() {
-  const observer = new MutationObserver((mutations) => {
+function setupBoardObserver(root) {
+  if (STATE.boardObserver) STATE.boardObserver.disconnect();
+
+  STATE.boardObserver = new MutationObserver((mutations) => {
     const fromUs = mutations.every((mutation) =>
       [...mutation.addedNodes].every(
         (node) =>
@@ -121,7 +162,17 @@ function setupLightObserver() {
     if (!fromUs) scheduleScan();
   });
 
-  observer.observe(document.body, { childList: true, subtree: true });
+  STATE.boardObserver.observe(root, { childList: true, subtree: true });
+}
+
+async function waitForBoard(maxMs = 20000) {
+  const start = Date.now();
+  while (Date.now() - start < maxMs) {
+    const root = findBoardRoot();
+    if (root && !isPageLoading()) return root;
+    await new Promise((resolve) => setTimeout(resolve, 500));
+  }
+  return findBoardRoot();
 }
 
 async function init() {
@@ -130,9 +181,10 @@ async function init() {
 
   if (!STATE.settings.enabled) return;
 
-  setTimeout(scanPage, 1500);
-  setInterval(scanPage, 5000);
-  setupLightObserver();
+  const boardRoot = await waitForBoard();
+  setTimeout(() => runScanWhenIdle(scanPage), INITIAL_SCAN_DELAY_MS);
+  setInterval(() => runScanWhenIdle(scanPage), PERIODIC_SCAN_MS);
+  if (boardRoot) setupBoardObserver(boardRoot);
   setupAutoRefresh();
 }
 

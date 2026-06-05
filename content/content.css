@@ -20,6 +20,16 @@
   pointer-events: auto;
 }
 
+.le-overlay-chip.le-chip-good {
+  box-shadow:
+    inset 3px 0 0 #22c55e,
+    0 4px 16px rgba(15, 23, 42, 0.18);
+}
+
+.le-overlay-chip.le-chip-weak {
+  opacity: 0.88;
+}
+
 .le-toolbar {
   position: fixed;
   top: 12px;

@@ -188,17 +188,3 @@ export function renderLoadEnhancements(load, settings) {
   return bar;
 }
 
-export function applyRowStyles(row, load, settings) {
-  row.classList.remove("le-row-good", "le-row-weak", "le-row-dim");
-
-  if (!load.passesFilters && settings.hideBelowThreshold) {
-    row.classList.add("le-row-dim");
-    return;
-  }
-
-  if (load.passesFilters && settings.highlightGoodLoads) {
-    row.classList.add("le-row-good");
-  } else if (!load.passesFilters) {
-    row.classList.add("le-row-weak");
-  }
-}
