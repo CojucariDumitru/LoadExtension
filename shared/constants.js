@@ -26,7 +26,19 @@ export const DEFAULT_SETTINGS = {
     botToken: "",
     chatId: ""
   },
-  fmcsaWebKey: ""
+  fmcsaWebKey: "",
+  rts: {
+    enabled: true,
+    userId: "",
+    userPass: "",
+    minGrade: ""
+  },
+  tollguru: {
+    enabled: false,
+    apiKey: "",
+    truckAxles: 5,
+    showNetRpm: true
+  }
 };
 
 export const STORAGE_KEY = "loadExtensionSettings";

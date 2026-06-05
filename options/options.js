@@ -35,6 +35,15 @@ async function loadForm() {
   setValue("telegramEnabled", settings.telegram?.enabled);
   setValue("telegramBotToken", settings.telegram?.botToken);
   setValue("telegramChatId", settings.telegram?.chatId);
+
+  setValue("rtsEnabled", settings.rts?.enabled);
+  setValue("rtsUserId", settings.rts?.userId);
+  setValue("rtsUserPass", settings.rts?.userPass);
+
+  setValue("tollguruEnabled", settings.tollguru?.enabled);
+  setValue("tollguruApiKey", settings.tollguru?.apiKey);
+  setValue("tollguruTruckAxles", settings.tollguru?.truckAxles ?? 5);
+  setValue("tollguruShowNetRpm", settings.tollguru?.showNetRpm);
 }
 
 form.addEventListener("submit", async (event) => {
@@ -69,6 +78,17 @@ form.addEventListener("submit", async (event) => {
       enabled: document.getElementById("telegramEnabled").checked,
       botToken: document.getElementById("telegramBotToken").value.trim(),
       chatId: document.getElementById("telegramChatId").value.trim()
+    },
+    rts: {
+      enabled: document.getElementById("rtsEnabled").checked,
+      userId: document.getElementById("rtsUserId").value.trim(),
+      userPass: document.getElementById("rtsUserPass").value
+    },
+    tollguru: {
+      enabled: document.getElementById("tollguruEnabled").checked,
+      apiKey: document.getElementById("tollguruApiKey").value.trim(),
+      truckAxles: Number(document.getElementById("tollguruTruckAxles").value) || 5,
+      showNetRpm: document.getElementById("tollguruShowNetRpm").checked
     }
   };
 

@@ -56,6 +56,35 @@
         </section>
 
         <section>
+          <h2>RTS factoring scores</h2>
+          <label class="checkbox"><input type="checkbox" id="rtsEnabled" /> Show RTS credit grades on loads</label>
+          <div class="grid">
+            <label>RTS webservice User ID <input type="text" id="rtsUserId" autocomplete="off" /></label>
+            <label>RTS webservice password <input type="password" id="rtsUserPass" autocomplete="off" /></label>
+          </div>
+          <p class="note">
+            Option A — <strong>Automatic lookup</strong>: RTS includes a legacy webservice at webservice.rtscredit.com.
+            Call RTS support (855-851-1005) and ask for your <em>webservice User ID and password</em> (separate from rtspro.com login).
+            Option B — <strong>Manual cache</strong>: stay logged into <a href="https://rtspro.com/credit/search" target="_blank" rel="noopener">rtspro.com/credit</a>.
+            When you open a broker credit page, the extension caches the grade for inline display on DAT.
+          </p>
+        </section>
+
+        <section>
+          <h2>TollGuru toll calculations</h2>
+          <label class="checkbox"><input type="checkbox" id="tollguruEnabled" /> Calculate route tolls on each load</label>
+          <div class="grid">
+            <label>API key <input type="password" id="tollguruApiKey" autocomplete="off" /></label>
+            <label>Truck axles <input type="number" id="tollguruTruckAxles" min="2" max="9" /></label>
+          </div>
+          <label class="checkbox"><input type="checkbox" id="tollguruShowNetRpm" /> Show net RPM after tolls</label>
+          <p class="note">
+            Free trial at <a href="https://tollguru.com/toll-api-docs" target="_blank" rel="noopener">tollguru.com</a>
+            — 150 requests/day with a business email, 15/day with personal email.
+          </p>
+        </section>
+
+        <section>
           <h2>Telegram alerts (free)</h2>
           <label class="checkbox"><input type="checkbox" id="telegramEnabled" /> Send Telegram alerts for matching loads</label>
           <div class="grid">

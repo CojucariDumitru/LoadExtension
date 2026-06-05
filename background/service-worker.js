@@ -1,8 +1,17 @@
 import { SEEN_LOADS_KEY } from "../shared/constants.js";
 import { formatLoadAlert, sendTelegramMessage } from "../shared/telegram.js";
 import { getLocal, getSettings, setLocal } from "../shared/storage.js";
+import {
+  creditCacheKey,
+  getCachedCredit,
+  setCachedCredit
+} from "../shared/credit-cache.js";
+import { buildRtsProSearchUrl, lookupBrokerCredit } from "../shared/rts.js";
+import { calculateRouteTolls } from "../shared/toll.js";
 
 const SEEN_TTL_MS = 24 * 60 * 60 * 1000;
+const TOLL_CACHE_KEY = "loadExtensionTollCache";
+const TOLL_CACHE_TTL_MS = 12 * 60 * 60 * 1000;
 
 async function pruneSeenLoads(seen) {
   const now = Date.now();
@@ -37,6 +46,62 @@ async function handleLoadMatch(load) {
   }
 }
 
+async function lookupCredit(payload) {
+  const settings = await getSettings();
+  const key = creditCacheKey(payload);
+  const cached = await getCachedCredit(getLocal, key);
+  if (cached) return cached;
+
+  if (settings.rts?.enabled && settings.rts.userId && settings.rts.userPass) {
+    try {
+      const credit = await lookupBrokerCredit({
+        userId: settings.rts.userId,
+        userPass: settings.rts.userPass,
+        mcNumber: payload.mcNumber,
+        brokerName: payload.brokerName
+      });
+      if (credit) {
+        await setCachedCredit(setLocal, getLocal, key, credit);
+        return credit;
+      }
+    } catch (error) {
+      console.warn("[LoadExtension] RTS SOAP lookup failed:", error.message);
+    }
+  }
+
+  return {
+    pending: true,
+    rtsUrl: buildRtsProSearchUrl(payload)
+  };
+}
+
+async function lookupTolls(payload) {
+  const settings = await getSettings();
+  if (!settings.tollguru?.enabled || !settings.tollguru.apiKey) {
+    return null;
+  }
+
+  const cacheKey = `${payload.origin}|${payload.destination}|${settings.deadheadCity}|${settings.deadheadState}|${settings.tollguru.truckAxles}`;
+  const cache = await getLocal(TOLL_CACHE_KEY, {});
+  const cached = cache[cacheKey];
+  if (cached && Date.now() - cached.fetchedAt < TOLL_CACHE_TTL_MS) {
+    return cached;
+  }
+
+  const toll = await calculateRouteTolls({
+    apiKey: settings.tollguru.apiKey,
+    deadheadCity: settings.deadheadCity,
+    deadheadState: settings.deadheadState,
+    origin: payload.origin,
+    destination: payload.destination,
+    truckAxles: settings.tollguru.truckAxles
+  });
+
+  cache[cacheKey] = { ...toll, fetchedAt: Date.now() };
+  await setLocal(TOLL_CACHE_KEY, cache);
+  return toll;
+}
+
 chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
   if (message.type === "LOAD_MATCH") {
     handleLoadMatch(message.payload)
@@ -47,6 +112,28 @@ chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
 
   if (message.type === "GET_SETTINGS") {
     getSettings().then((settings) => sendResponse({ settings }));
+    return true;
+  }
+
+  if (message.type === "GET_CREDIT") {
+    lookupCredit(message.payload)
+      .then((credit) => sendResponse({ ok: true, credit }))
+      .catch((error) => sendResponse({ ok: false, error: error.message }));
+    return true;
+  }
+
+  if (message.type === "GET_TOLLS") {
+    lookupTolls(message.payload)
+      .then((toll) => sendResponse({ ok: true, toll }))
+      .catch((error) => sendResponse({ ok: false, error: error.message }));
+    return true;
+  }
+
+  if (message.type === "CACHE_CREDIT") {
+    const key = creditCacheKey(message.payload);
+    setCachedCredit(setLocal, getLocal, key, message.payload)
+      .then(() => sendResponse({ ok: true }))
+      .catch((error) => sendResponse({ ok: false, error: error.message }));
     return true;
   }
 });

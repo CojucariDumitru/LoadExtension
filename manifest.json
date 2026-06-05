@@ -1,7 +1,7 @@
 {
   "manifest_version": 3,
   "name": "LoadExtension",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "description": "Self-hosted dispatch helper for load boards — RPM filters, one-click email, maps, and Telegram alerts.",
   "permissions": ["storage", "tabs"],
   "host_permissions": [
@@ -10,7 +10,10 @@
     "https://*.truckstop.com/*",
     "https://*.trucksmarter.com/*",
     "https://api.telegram.org/*",
-    "https://mobile.fmcsa.dot.gov/*"
+    "https://mobile.fmcsa.dot.gov/*",
+    "https://apis.tollguru.com/*",
+    "https://rtspro.com/*",
+    "http://webservice.rtscredit.com/*"
   ],
   "background": {
     "service_worker": "dist/background.js",
@@ -41,6 +44,11 @@
       ],
       "js": ["dist/content.js"],
       "css": ["content/content.css"],
+      "run_at": "document_idle"
+    },
+    {
+      "matches": ["https://rtspro.com/*"],
+      "js": ["content/rts-capture.js"],
       "run_at": "document_idle"
     }
   ]

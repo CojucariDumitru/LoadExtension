@@ -1,6 +1,9 @@
 import { calculateRpm, estimateDeadheadMiles } from "../shared/rpm.js";
 import { applyTemplate, buildMailtoUrl } from "../shared/email.js";
 import { buildGoogleMapsRouteUrl, buildFmcsaSaferUrl } from "../shared/maps.js";
+import { buildRtsProSearchUrl } from "../shared/rts.js";
+import { gradeClass } from "../shared/credit-cache.js";
+import { netRpmAfterTolls } from "../shared/toll.js";
 
 export function enrichLoad(load, settings) {
   const deadheadMiles = estimateDeadheadMiles(
@@ -46,6 +49,88 @@ function createButton(label, title, onClick) {
     onClick();
   });
   return button;
+}
+
+function createBadge(className, text, title = "") {
+  const badge = document.createElement("span");
+  badge.className = className;
+  badge.textContent = text;
+  if (title) badge.title = title;
+  return badge;
+}
+
+function requestBackground(type, payload) {
+  return chrome.runtime.sendMessage({ type, payload });
+}
+
+export function attachAsyncInsights(bar, load, settings) {
+  if (settings.rts?.enabled && (load.brokerMcNumber || load.broker || load.dotNumber)) {
+    requestBackground("GET_CREDIT", {
+      mcNumber: load.brokerMcNumber,
+      dotNumber: load.dotNumber,
+      brokerName: load.broker
+    })
+      .then((response) => {
+        if (!response?.ok || !response.credit) return;
+        const { credit } = response;
+
+        if (credit.pending) {
+          bar.appendChild(
+            createButton("RTS", "Open RTS Pro credit search", () => {
+              window.open(credit.rtsUrl || buildRtsProSearchUrl(load), "_blank", "noopener");
+            })
+          );
+          return;
+        }
+
+        if (credit.grade) {
+          bar.appendChild(
+            createBadge(
+              `le-credit-badge ${gradeClass(credit.grade)}`,
+              `RTS ${credit.grade}`,
+              credit.averageDaysToPay
+                ? `Avg days to pay: ${credit.averageDaysToPay}`
+                : "RTS factoring grade"
+            )
+          );
+        } else if (credit.averageDaysToPay != null) {
+          bar.appendChild(
+            createBadge("le-credit-badge le-grade-unknown", `${credit.averageDaysToPay}d pay`)
+          );
+        }
+      })
+      .catch(() => {});
+  }
+
+  if (settings.tollguru?.enabled && settings.tollguru.apiKey && load.origin && load.destination) {
+    requestBackground("GET_TOLLS", {
+      origin: load.origin,
+      destination: load.destination
+    })
+      .then((response) => {
+        if (!response?.ok || !response.toll || response.toll.tollCost == null) return;
+        const { toll } = response;
+
+        bar.appendChild(
+          createBadge(
+            "le-toll-badge",
+            `Tolls $${toll.tollCost.toFixed(0)}`,
+            toll.durationText ? `${toll.durationText}, ${toll.distanceText}` : "Estimated route tolls"
+          )
+        );
+
+        if (settings.tollguru.showNetRpm && load.rate && load.miles) {
+          const netRpm = netRpmAfterTolls(
+            load.rate,
+            load.miles,
+            load.deadheadMiles,
+            toll.tollCost
+          );
+          bar.appendChild(createBadge("le-net-rpm-badge", `Net RPM $${netRpm.toFixed(2)}`));
+        }
+      })
+      .catch(() => {});
+  }
 }
 
 export function renderLoadEnhancements(load, settings) {
@@ -101,6 +186,7 @@ export function renderLoadEnhancements(load, settings) {
     );
   }
 
+  attachAsyncInsights(bar, load, settings);
   return bar;
 }
 

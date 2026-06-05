@@ -3,7 +3,6 @@ import { parseMoney, parseMiles } from "../shared/rpm.js";
 const CITY_STATE_RE = /([A-Za-z][A-Za-z .'-]+),\s*([A-Z]{2})\b/g;
 const EMAIL_RE = /[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}/;
 const DOT_RE = /\b(?:USDOT|DOT)\s*#?\s*(\d{5,8})\b/i;
-const MC_RE = /\bMC\s*#?\s*(\d{5,8})\b/i;
 
 function uniqueId(parts) {
   return parts.filter(Boolean).join("|").toLowerCase();
@@ -104,7 +103,8 @@ export function parseLoadFromElement(element) {
   const miles = guessMiles(text);
   const emailMatch = text.match(EMAIL_RE);
   const dotMatch = text.match(DOT_RE);
-  const mcMatch = text.match(MC_RE);
+  const mcMatches = [...text.matchAll(/\bMC\s*#?\s*(\d{5,8})\b/gi)].map((m) => m[1]);
+  const brokerMcNumber = mcMatches[0] || "";
 
   const brokerLine = text
     .split("\n")
@@ -121,9 +121,10 @@ export function parseLoadFromElement(element) {
     miles,
     equipment: guessEquipment(text),
     broker: brokerLine || "",
+    brokerMcNumber,
     email: emailMatch ? emailMatch[0] : "",
     dotNumber: dotMatch ? dotMatch[1] : "",
-    mcNumber: mcMatch ? mcMatch[1] : "",
+    mcNumber: brokerMcNumber,
     rawText: text.slice(0, 500),
     element
   };
