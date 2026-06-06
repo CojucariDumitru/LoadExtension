@@ -3,7 +3,7 @@ import { detectBoard, scanForLoads } from "./parsers.js";
 import { enrichLoad, renderLoadEnhancements } from "./ui.js";
 import { OverlayManager } from "./overlay.js";
 
-export const BUILD_VERSION = "0.4.4";
+export const BUILD_VERSION = "0.4.5";
 
 const SCAN_MIN_INTERVAL_MS = 3000;
 const INITIAL_SCAN_DELAY_MS = 2000;

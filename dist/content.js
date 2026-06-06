@@ -577,7 +577,7 @@ var OverlayManager = class {
 };
 
 // content/content.js
-var BUILD_VERSION = "0.4.4";
+var BUILD_VERSION = "0.4.5";
 var SCAN_MIN_INTERVAL_MS = 3e3;
 var INITIAL_SCAN_DELAY_MS = 2e3;
 var PERIODIC_SCAN_MS = 12e3;
