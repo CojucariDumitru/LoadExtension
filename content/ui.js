@@ -3,20 +3,63 @@ import { applyTemplate, buildMailtoUrl } from "../shared/email.js";
 import { buildGoogleMapsRouteUrl, buildFmcsaSaferUrl } from "../shared/maps.js";
 import { gradeClass } from "../shared/credit-cache.js";
 import { netRpmAfterTolls } from "../shared/toll.js";
+import { parseDatSearchOrigin, parseDeadheadMiles } from "./dat-context.js";
+import { findDetailPanel } from "./dat-anchors.js";
+
+const EMAIL_RE = /[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}/;
 
 export function enrichLoad(load, settings) {
-  const deadheadMiles = estimateDeadheadMiles(
-    settings.deadheadCity,
-    settings.deadheadState,
-    load.originCity,
-    load.originState
-  );
+  const searchOrigin = parseDatSearchOrigin();
+  const searchOriginCity = searchOrigin?.city || settings.deadheadCity;
+  const searchOriginState = searchOrigin?.state || settings.deadheadState;
+
+  let deadheadMiles = parseDeadheadMiles(load.rawText, load.originCity);
+  if (!deadheadMiles) {
+    deadheadMiles = estimateDeadheadMiles(
+      searchOriginCity,
+      searchOriginState,
+      load.originCity,
+      load.originState
+    );
+  }
+
   const rpm = calculateRpm(load.rate, load.miles, deadheadMiles);
+  const loadedRpm = load.miles ? load.rate / load.miles : 0;
+
+  const panel = findDetailPanel(load);
+  let email = load.email;
+  let brokerMcNumber = load.brokerMcNumber;
+  let broker = load.broker;
+
+  if (panel) {
+    const panelText = panel.textContent || "";
+    if (!email) {
+      const mail = panel.querySelector('a[href^="mailto:"]');
+      email = mail?.href?.replace(/^mailto:/i, "").split("?")[0] || panelText.match(EMAIL_RE)?.[0] || "";
+    }
+    if (!brokerMcNumber) {
+      brokerMcNumber = panelText.match(/MC#?\s*(\d{5,8})/i)?.[1] || brokerMcNumber;
+    }
+    if (!broker) {
+      broker =
+        panelText
+          .split("\n")
+          .map((line) => line.trim())
+          .find((line) => /logistics|freight|transport|services|inc\.?|llc/i.test(line)) || broker;
+    }
+  }
 
   return {
     ...load,
+    email,
+    broker,
+    brokerMcNumber,
     deadheadMiles,
     rpm,
+    loadedRpm,
+    searchOriginCity,
+    searchOriginState,
+    searchOriginLabel: searchOrigin?.label || "",
     passesFilters: matchesFilters({ ...load, rpm, deadheadMiles }, settings)
   };
 }

@@ -208,6 +208,31 @@ export function parseLoadFromElement(element) {
   };
 }
 
+function scanDatExpandedPanels() {
+  const loads = [];
+
+  for (const el of document.querySelectorAll("div, section, article")) {
+    if (el.closest("#loadextension-overlay-root, #loadextension-toolbar")) continue;
+    const rect = el.getBoundingClientRect();
+    if (rect.height < 150 || rect.width < 480) continue;
+
+    const text = rowText(el);
+    if (!/factoring eligible|rate\s*\/\s*mile|view route/i.test(text)) continue;
+
+    const cities = extractCityPairs(text);
+    if (cities.length < 2) continue;
+
+    const rate = guessRate(text, "dat");
+    const miles = guessMiles(text, "dat");
+    if (!rate || !miles) continue;
+
+    const load = parseLoadFromElement(el);
+    if (load.origin && load.destination) loads.push(load);
+  }
+
+  return loads;
+}
+
 export function scanForLoads(root = document.body) {
   const roots = [root];
   if (detectBoard() === "dat" && root !== document.body) {
@@ -219,6 +244,14 @@ export function scanForLoads(root = document.body) {
 
   for (const scanRoot of roots) {
     for (const load of findRowCandidates(scanRoot).map(parseLoadFromElement)) {
+      if (!load.origin || !load.destination || seen.has(load.id)) continue;
+      seen.add(load.id);
+      loads.push(load);
+    }
+  }
+
+  if (detectBoard() === "dat") {
+    for (const load of scanDatExpandedPanels()) {
       if (!load.origin || !load.destination || seen.has(load.id)) continue;
       seen.add(load.id);
       loads.push(load);

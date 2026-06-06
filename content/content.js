@@ -2,8 +2,9 @@ import { getSettings } from "../shared/storage.js";
 import { detectBoard, scanForLoads } from "./parsers.js";
 import { enrichLoad, renderLoadEnhancements } from "./ui.js";
 import { OverlayManager } from "./overlay.js";
+import { mountDatEnhancements } from "./dat-mount.js";
 
-export const BUILD_VERSION = "0.4.5";
+export const BUILD_VERSION = "0.5.0";
 
 const SCAN_MIN_INTERVAL_MS = 3000;
 const INITIAL_SCAN_DELAY_MS = 2000;
@@ -32,13 +33,18 @@ function processLoadRow(load) {
   const enriched = enrichLoad(load, STATE.settings);
   if (!enriched.passesFilters && STATE.settings.hideBelowThreshold) return;
 
-  const bar = renderLoadEnhancements(enriched, STATE.settings);
-  if (enriched.passesFilters && STATE.settings.highlightGoodLoads) {
-    bar.classList.add("le-chip-good");
-  } else if (!enriched.passesFilters) {
-    bar.classList.add("le-chip-weak");
+  if (detectBoard() === "dat") {
+    mountDatEnhancements(enriched, STATE.settings, STATE.overlay);
+  } else {
+    const bar = renderLoadEnhancements(enriched, STATE.settings);
+    if (enriched.passesFilters && STATE.settings.highlightGoodLoads) {
+      bar.classList.add("le-chip-good");
+    } else if (!enriched.passesFilters) {
+      bar.classList.add("le-chip-weak");
+    }
+    STATE.overlay.mount(load.id, load.element, bar);
   }
-  STATE.overlay.mount(load.id, load.element, bar);
+
   STATE.processedIds.add(load.id);
 
   if (enriched.passesFilters) {

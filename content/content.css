@@ -162,3 +162,96 @@
   background: #cffafe;
   color: #0e7490;
 }
+
+.le-dat-widget {
+  position: fixed;
+  z-index: 2147483646;
+  pointer-events: auto;
+  font: 12px/1.3 system-ui, sans-serif;
+}
+
+.le-dat-rpm {
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 0;
+  padding: 4px 8px;
+  background: #ecfdf5;
+  border: 2px solid #16a34a;
+  border-radius: 8px;
+  color: #166534;
+  text-align: center;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.12);
+}
+
+.le-dat-rpm strong {
+  font-size: 14px;
+}
+
+.le-dat-rpm small {
+  font-size: 10px;
+  opacity: 0.85;
+}
+
+.le-dat-rpm-label {
+  font-size: 10px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+
+.le-dat-map {
+  align-items: center;
+  justify-content: center;
+}
+
+.le-dat-map-btn {
+  width: 30px;
+  height: 30px;
+  border: 0;
+  border-radius: 999px;
+  background: #2563eb;
+  color: #fff;
+  font-size: 14px;
+  cursor: pointer;
+  box-shadow: 0 2px 8px rgba(37, 99, 235, 0.45);
+}
+
+.le-dat-map-btn:hover {
+  background: #1d4ed8;
+}
+
+.le-dat-rts {
+  flex-direction: column;
+  gap: 4px;
+}
+
+.le-dat-rts-badge,
+.le-dat-rts-pending {
+  display: inline-flex;
+  padding: 4px 10px;
+  border-radius: 6px;
+  font-weight: 700;
+  background: #f1f5f9;
+  color: #334155;
+}
+
+.le-dat-rts-btn,
+.le-dat-email-btn {
+  border: 0;
+  border-radius: 6px;
+  padding: 6px 10px;
+  background: #2563eb;
+  color: #fff;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.le-dat-email-btn {
+  background: #0f766e;
+}
+
+.le-dat-email-btn:hover,
+.le-dat-rts-btn:hover {
+  filter: brightness(1.05);
+}

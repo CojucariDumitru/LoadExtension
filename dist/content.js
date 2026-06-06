@@ -264,6 +264,24 @@ function parseLoadFromElement(element) {
     element
   };
 }
+function scanDatExpandedPanels() {
+  const loads = [];
+  for (const el of document.querySelectorAll("div, section, article")) {
+    if (el.closest("#loadextension-overlay-root, #loadextension-toolbar")) continue;
+    const rect = el.getBoundingClientRect();
+    if (rect.height < 150 || rect.width < 480) continue;
+    const text = rowText(el);
+    if (!/factoring eligible|rate\s*\/\s*mile|view route/i.test(text)) continue;
+    const cities = extractCityPairs(text);
+    if (cities.length < 2) continue;
+    const rate = guessRate(text, "dat");
+    const miles = guessMiles(text, "dat");
+    if (!rate || !miles) continue;
+    const load = parseLoadFromElement(el);
+    if (load.origin && load.destination) loads.push(load);
+  }
+  return loads;
+}
 function scanForLoads(root = document.body) {
   const roots = [root];
   if (detectBoard() === "dat" && root !== document.body) {
@@ -273,6 +291,13 @@ function scanForLoads(root = document.body) {
   const loads = [];
   for (const scanRoot of roots) {
     for (const load of findRowCandidates(scanRoot).map(parseLoadFromElement)) {
+      if (!load.origin || !load.destination || seen.has(load.id)) continue;
+      seen.add(load.id);
+      loads.push(load);
+    }
+  }
+  if (detectBoard() === "dat") {
+    for (const load of scanDatExpandedPanels()) {
       if (!load.origin || !load.destination || seen.has(load.id)) continue;
       seen.add(load.id);
       loads.push(load);
@@ -347,19 +372,206 @@ function netRpmAfterTolls(rate, tripMiles, deadheadMiles, tollCost) {
   return netRate / totalMiles;
 }
 
+// content/dat-context.js
+var CITY_STATE_RE2 = /([A-Za-z][A-Za-z .'-]+),\s*([A-Z]{2})\b/;
+function parseDatSearchOrigin() {
+  for (const el of document.querySelectorAll("input, textarea, button, span, div, label")) {
+    const text = (el.textContent || el.value || "").replace(/\s+/g, " ").trim();
+    if (text.length > 60) continue;
+    const nearOrigin = el.closest('[class*="origin" i], [aria-label*="origin" i]');
+    if (nearOrigin) {
+      const match = nearOrigin.textContent.match(CITY_STATE_RE2);
+      if (match) {
+        return { city: match[1].trim(), state: match[2], label: `${match[1].trim()}, ${match[2]}` };
+      }
+    }
+    if (/^origin$/i.test(text) || /^dh-o$/i.test(text)) {
+      const parent = el.parentElement?.parentElement;
+      const match = parent?.textContent.match(CITY_STATE_RE2);
+      if (match) {
+        return { city: match[1].trim(), state: match[2], label: `${match[1].trim()}, ${match[2]}` };
+      }
+    }
+  }
+  const header = document.body?.textContent || "";
+  const block = header.match(/Origin[\s\S]{0,120}?([A-Za-z .'-]+,\s*[A-Z]{2})/i);
+  if (block) {
+    const match = block[0].match(CITY_STATE_RE2);
+    if (match) {
+      return { city: match[1].trim(), state: match[2], label: `${match[1].trim()}, ${match[2]}` };
+    }
+  }
+  return null;
+}
+function parseDeadheadMiles(text, originCity = "") {
+  if (!text) return 0;
+  if (originCity) {
+    const escaped = originCity.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+    const nearOrigin = text.match(new RegExp(`\\((\\d{1,3})\\)[^(]{0,40}${escaped}`, "i"));
+    if (nearOrigin) return Number(nearOrigin[1]);
+  }
+  const dhO = text.match(/DH[-\s]?O\D*(\d{1,3})/i);
+  if (dhO) return Number(dhO[1]);
+  const parenDh = text.match(/\((\d{1,3})\)\s*(?:mi|miles)?/i);
+  if (parenDh) return Number(parenDh[1]);
+  return 0;
+}
+
+// content/dat-anchors.js
+var EMAIL_RE2 = /[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}/;
+function isVisible(el) {
+  if (!(el instanceof HTMLElement) || !el.isConnected) return false;
+  const rect = el.getBoundingClientRect();
+  return rect.width > 0 && rect.height > 0 && rect.bottom > 0 && rect.top < window.innerHeight;
+}
+function leafNodes(root) {
+  const nodes = [];
+  const walk = (el) => {
+    if (!(el instanceof HTMLElement)) return;
+    if (el.closest("#loadextension-overlay-root, .le-dat-widget")) return;
+    if (el.children.length === 0) nodes.push(el);
+    else el.childNodes.forEach((child) => walk(child));
+  };
+  walk(root);
+  return nodes;
+}
+function findDetailPanel(load) {
+  const candidates = [...document.querySelectorAll("div, section, article, main")].filter((el) => {
+    if (el.closest("#loadextension-overlay-root, #loadextension-toolbar")) return false;
+    const text = el.textContent || "";
+    if (!text.includes(load.originCity) || !text.includes(load.destinationCity)) return false;
+    if (!String(load.rate) || !text.includes(String(load.rate))) return false;
+    const rect = el.getBoundingClientRect();
+    return rect.height >= 160 && rect.width >= 500;
+  });
+  candidates.sort((a, b) => a.getBoundingClientRect().height - b.getBoundingClientRect().height);
+  return candidates.find((el) => /factoring eligible|rate\s*\/\s*mile|view route/i.test(el.textContent)) || candidates[0] || null;
+}
+function findCityLeaf(panel, city, state) {
+  const target = `${city}, ${state}`;
+  return leafNodes(panel).find((el) => {
+    const text = (el.textContent || "").trim();
+    return text.includes(target) && text.length <= 60;
+  });
+}
+function scanAnchorsIn(root, load, anchors) {
+  if (!root) return;
+  for (const el of leafNodes(root)) {
+    const text = (el.textContent || "").trim();
+    if (/^\$[\d,.]+\s*\*?\s*\/\s*mi/i.test(text) || /^\$[\d,.]+\/mi/i.test(text)) {
+      anchors.loadedRpm = el;
+    }
+  }
+  if (!anchors.originCity) {
+    anchors.originCity = findCityLeaf(root, load.originCity, load.originState);
+  }
+  if (!anchors.destCity) {
+    anchors.destCity = findCityLeaf(root, load.destinationCity, load.destinationState);
+  }
+  for (const el of root.querySelectorAll("*")) {
+    const text = (el.textContent || "").trim();
+    if (text.length > 80) continue;
+    if (!anchors.factoring && /factoring eligible/i.test(text)) anchors.factoring = el;
+    if (!anchors.mc && /^MC#?\s*\d+/i.test(text)) anchors.mc = el;
+  }
+  if (!anchors.email) {
+    const mailLink = root.querySelector('a[href^="mailto:"]');
+    if (mailLink) anchors.email = mailLink;
+  }
+  if (!anchors.emailText) {
+    for (const el of leafNodes(root)) {
+      const text = el.textContent || "";
+      if (EMAIL_RE2.test(text) && text.length < 80) {
+        anchors.emailText = el;
+        break;
+      }
+    }
+  }
+}
+function findDatAnchors(load) {
+  const panel = findDetailPanel(load);
+  const roots = [panel, load.element].filter(Boolean);
+  if (!roots.length) return {};
+  const anchors = { panel: panel || load.element };
+  for (const root of roots) {
+    scanAnchorsIn(root, load, anchors);
+  }
+  for (const el of leafNodes(panel)) {
+    const text = (el.textContent || "").trim();
+    if (/^\$[\d,.]+\s*\*?\s*\/\s*mi/i.test(text) || /^\$[\d,.]+\/mi/i.test(text)) {
+      anchors.loadedRpm = el;
+    }
+    if (/^rate\s*\/\s*mile$/i.test(text) && el.nextElementSibling) {
+      anchors.loadedRpm = el.nextElementSibling;
+    }
+  }
+  anchors.originCity = findCityLeaf(panel, load.originCity, load.originState);
+  anchors.destCity = findCityLeaf(panel, load.destinationCity, load.destinationState);
+  for (const el of panel.querySelectorAll("*")) {
+    const text = (el.textContent || "").trim();
+    if (text.length > 80) continue;
+    if (/factoring eligible/i.test(text)) anchors.factoring = el;
+    if (/^MC#?\s*\d+/i.test(text) && !anchors.mc) anchors.mc = el;
+  }
+  const mailLink = panel.querySelector('a[href^="mailto:"]');
+  if (mailLink) anchors.email = mailLink;
+  for (const el of leafNodes(panel)) {
+    const text = el.textContent || "";
+    if (EMAIL_RE2.test(text) && text.length < 80) {
+      anchors.emailText = el;
+      break;
+    }
+  }
+  if (anchors.loadedRpm && !isVisible(anchors.loadedRpm)) delete anchors.loadedRpm;
+  if (anchors.factoring && !isVisible(anchors.factoring)) delete anchors.factoring;
+  return anchors;
+}
+
 // content/ui.js
+var EMAIL_RE3 = /[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}/;
 function enrichLoad(load, settings) {
-  const deadheadMiles = estimateDeadheadMiles(
-    settings.deadheadCity,
-    settings.deadheadState,
-    load.originCity,
-    load.originState
-  );
+  const searchOrigin = parseDatSearchOrigin();
+  const searchOriginCity = searchOrigin?.city || settings.deadheadCity;
+  const searchOriginState = searchOrigin?.state || settings.deadheadState;
+  let deadheadMiles = parseDeadheadMiles(load.rawText, load.originCity);
+  if (!deadheadMiles) {
+    deadheadMiles = estimateDeadheadMiles(
+      searchOriginCity,
+      searchOriginState,
+      load.originCity,
+      load.originState
+    );
+  }
   const rpm = calculateRpm(load.rate, load.miles, deadheadMiles);
+  const loadedRpm = load.miles ? load.rate / load.miles : 0;
+  const panel = findDetailPanel(load);
+  let email = load.email;
+  let brokerMcNumber = load.brokerMcNumber;
+  let broker = load.broker;
+  if (panel) {
+    const panelText = panel.textContent || "";
+    if (!email) {
+      const mail = panel.querySelector('a[href^="mailto:"]');
+      email = mail?.href?.replace(/^mailto:/i, "").split("?")[0] || panelText.match(EMAIL_RE3)?.[0] || "";
+    }
+    if (!brokerMcNumber) {
+      brokerMcNumber = panelText.match(/MC#?\s*(\d{5,8})/i)?.[1] || brokerMcNumber;
+    }
+    if (!broker) {
+      broker = panelText.split("\n").map((line) => line.trim()).find((line) => /logistics|freight|transport|services|inc\.?|llc/i.test(line)) || broker;
+    }
+  }
   return {
     ...load,
+    email,
+    broker,
+    brokerMcNumber,
     deadheadMiles,
     rpm,
+    loadedRpm,
+    searchOriginCity,
+    searchOriginState,
+    searchOriginLabel: searchOrigin?.label || "",
     passesFilters: matchesFilters({ ...load, rpm, deadheadMiles }, settings)
   };
 }
@@ -535,49 +747,176 @@ var OverlayManager = class {
     return root;
   }
   mount(loadId, row, bar) {
-    if (this.entries.has(loadId)) return;
+    this.mountAnchor(loadId, row, bar, "row-chip");
     bar.classList.add("le-overlay-chip");
-    bar.dataset.loadId = loadId;
-    this.root.appendChild(bar);
-    this.entries.set(loadId, { row, bar });
-    this.reposition(loadId);
   }
-  reposition(loadId) {
-    const entry = this.entries.get(loadId);
+  mountAnchor(key, anchor, widget, placement = "cover") {
+    if (this.entries.has(key)) return;
+    if (!anchor?.isConnected) return;
+    widget.dataset.anchorKey = key;
+    this.root.appendChild(widget);
+    this.entries.set(key, { anchor, widget, placement });
+    this.reposition(key);
+  }
+  mountBetween(key, anchorA, anchorB, widget) {
+    if (this.entries.has(key)) return;
+    if (!anchorA?.isConnected || !anchorB?.isConnected) return;
+    widget.dataset.anchorKey = key;
+    this.root.appendChild(widget);
+    this.entries.set(key, { anchor: anchorA, anchorB, widget, placement: "between" });
+    this.reposition(key);
+  }
+  reposition(key) {
+    const entry = this.entries.get(key);
     if (!entry) return;
-    const { row, bar } = entry;
-    if (!row.isConnected) {
-      bar.remove();
-      this.entries.delete(loadId);
+    const { anchor, anchorB, widget, placement } = entry;
+    if (!anchor?.isConnected || placement === "between" && !anchorB?.isConnected) {
+      widget.remove();
+      this.entries.delete(key);
       return;
     }
-    const rect = row.getBoundingClientRect();
-    if (rect.height < 20 || rect.width < 80 || rect.bottom < 0 || rect.top > window.innerHeight) {
-      bar.style.display = "none";
+    const rect = anchor.getBoundingClientRect();
+    if (rect.width < 1 && rect.height < 1) {
+      widget.style.display = "none";
       return;
     }
-    bar.style.display = "flex";
-    bar.style.top = `${Math.max(4, rect.top + 4)}px`;
-    bar.style.left = `${Math.min(window.innerWidth - 8, rect.right - 8)}px`;
+    widget.style.display = "flex";
+    if (placement === "between" && anchorB) {
+      const rectB = anchorB.getBoundingClientRect();
+      const top = Math.min(rect.top, rectB.top) + Math.abs(rectB.top - rect.top) / 2;
+      const left = (rect.right + rectB.left) / 2;
+      widget.style.top = `${Math.max(4, top - 14)}px`;
+      widget.style.left = `${Math.max(4, left - 14)}px`;
+      return;
+    }
+    if (placement === "cover") {
+      widget.style.top = `${rect.top}px`;
+      widget.style.left = `${rect.left}px`;
+      widget.style.width = `${Math.max(rect.width, 90)}px`;
+      widget.style.minHeight = `${Math.max(rect.height, 22)}px`;
+      return;
+    }
+    if (placement === "below") {
+      widget.style.top = `${rect.bottom + 4}px`;
+      widget.style.left = `${rect.left}px`;
+      return;
+    }
+    if (placement === "row-chip") {
+      if (rect.height < 20 || rect.width < 80 || rect.bottom < 0 || rect.top > window.innerHeight) {
+        widget.style.display = "none";
+        return;
+      }
+      widget.style.top = `${Math.max(4, rect.top + 4)}px`;
+      widget.style.left = `${Math.min(window.innerWidth - 8, rect.right - 8)}px`;
+    }
   }
   repositionAll() {
-    for (const loadId of this.entries.keys()) {
-      this.reposition(loadId);
+    for (const key of this.entries.keys()) {
+      this.reposition(key);
     }
   }
   clear() {
-    for (const { bar } of this.entries.values()) {
-      bar.remove();
+    for (const { widget } of this.entries.values()) {
+      widget.remove();
     }
     this.entries.clear();
   }
   count() {
-    return this.entries.size;
+    const loadIds = /* @__PURE__ */ new Set();
+    for (const key of this.entries.keys()) {
+      loadIds.add(key.split(":")[0]);
+    }
+    return loadIds.size;
   }
 };
 
+// content/dat-mount.js
+function requestBackground2(type, payload) {
+  return chrome.runtime.sendMessage({ type, payload });
+}
+function getActiveTemplate2(settings) {
+  return settings.emailTemplates.find((t) => t.id === settings.activeTemplateId) || settings.emailTemplates[0];
+}
+function createWidget(className, html) {
+  const el = document.createElement("div");
+  el.className = `le-dat-widget ${className}`;
+  el.innerHTML = html;
+  return el;
+}
+function bindButton(widget, selector, handler) {
+  widget.querySelector(selector)?.addEventListener("click", (event) => {
+    event.preventDefault();
+    event.stopPropagation();
+    handler();
+  });
+}
+function mountDatEnhancements(load, settings, overlay) {
+  const anchors = findDatAnchors(load);
+  const searchCity = load.searchOriginCity || settings.deadheadCity;
+  const searchState = load.searchOriginState || settings.deadheadState;
+  if (anchors.loadedRpm) {
+    const totalMi = load.miles + load.deadheadMiles;
+    const widget = createWidget(
+      "le-dat-rpm",
+      `<span class="le-dat-rpm-label">Full RPM</span>
+       <strong>$${load.rpm.toFixed(2)}/mi</strong>
+       <small>${load.miles} loaded + ${load.deadheadMiles} DH</small>`
+    );
+    widget.title = `Loaded $${(load.rate / load.miles || 0).toFixed(2)}/mi \u2192 Full $${load.rpm.toFixed(2)}/mi (${totalMi} total mi)`;
+    overlay.mountAnchor(`${load.id}:rpm`, anchors.loadedRpm, widget, "cover");
+  }
+  if (anchors.originCity && anchors.destCity) {
+    const mapsUrl = buildGoogleMapsRouteUrl(load, searchCity, searchState);
+    if (mapsUrl) {
+      const widget = createWidget(
+        "le-dat-map",
+        `<button type="button" class="le-dat-map-btn" title="Open route in Google Maps">\u{1F5FA}\uFE0F</button>`
+      );
+      bindButton(widget, ".le-dat-map-btn", () => window.open(mapsUrl, "_blank", "noopener"));
+      overlay.mountBetween(`${load.id}:map`, anchors.originCity, anchors.destCity, widget);
+    }
+  }
+  if (settings.rts?.enabled && anchors.factoring && (load.brokerMcNumber || load.broker)) {
+    const widget = createWidget("le-dat-rts", `<span class="le-dat-rts-pending">RTS\u2026</span>`);
+    overlay.mountAnchor(`${load.id}:rts`, anchors.factoring, widget, "below");
+    requestBackground2("GET_CREDIT", {
+      mcNumber: load.brokerMcNumber,
+      dotNumber: load.dotNumber,
+      brokerName: load.broker
+    }).then((response) => {
+      if (!response?.ok || !response.credit) return;
+      const { credit } = response;
+      if (credit.pending) {
+        widget.innerHTML = `<button type="button" class="le-dat-rts-btn">${credit.needsLogin ? "Connect RTS" : "RTS lookup"}</button>`;
+        bindButton(widget, ".le-dat-rts-btn", () => {
+          window.open(credit.rtsUrl || "https://rtspro.com/credit/search", "_blank", "noopener");
+        });
+      } else if (credit.grade || credit.averageDaysToPay != null) {
+        const label = credit.grade ? `RTS ${credit.grade}` : `${credit.averageDaysToPay}d pay`;
+        widget.innerHTML = `<span class="le-dat-rts-badge ${gradeClass(credit.grade)}">${label}</span>`;
+      }
+      overlay.repositionAll();
+    }).catch(() => {
+    });
+  }
+  const email = load.email || anchors.email?.href?.replace("mailto:", "") || "";
+  const emailAnchor = anchors.email || anchors.emailText;
+  if (email && emailAnchor) {
+    const template = getActiveTemplate2(settings);
+    const widget = createWidget(
+      "le-dat-email",
+      `<button type="button" class="le-dat-email-btn">\u2709\uFE0F Quick email</button>`
+    );
+    bindButton(widget, ".le-dat-email-btn", () => {
+      const { subject, body } = applyTemplate(template, { ...load, email }, settings);
+      window.open(buildMailtoUrl(email, subject, body), "_blank");
+    });
+    overlay.mountAnchor(`${load.id}:email`, emailAnchor, widget, "below");
+  }
+}
+
 // content/content.js
-var BUILD_VERSION = "0.4.5";
+var BUILD_VERSION = "0.5.0";
 var SCAN_MIN_INTERVAL_MS = 3e3;
 var INITIAL_SCAN_DELAY_MS = 2e3;
 var PERIODIC_SCAN_MS = 12e3;
@@ -601,13 +940,17 @@ function processLoadRow(load) {
   if (!load.element || STATE.processedIds.has(load.id)) return;
   const enriched = enrichLoad(load, STATE.settings);
   if (!enriched.passesFilters && STATE.settings.hideBelowThreshold) return;
-  const bar = renderLoadEnhancements(enriched, STATE.settings);
-  if (enriched.passesFilters && STATE.settings.highlightGoodLoads) {
-    bar.classList.add("le-chip-good");
-  } else if (!enriched.passesFilters) {
-    bar.classList.add("le-chip-weak");
+  if (detectBoard() === "dat") {
+    mountDatEnhancements(enriched, STATE.settings, STATE.overlay);
+  } else {
+    const bar = renderLoadEnhancements(enriched, STATE.settings);
+    if (enriched.passesFilters && STATE.settings.highlightGoodLoads) {
+      bar.classList.add("le-chip-good");
+    } else if (!enriched.passesFilters) {
+      bar.classList.add("le-chip-weak");
+    }
+    STATE.overlay.mount(load.id, load.element, bar);
   }
-  STATE.overlay.mount(load.id, load.element, bar);
   STATE.processedIds.add(load.id);
   if (enriched.passesFilters) {
     notifyBackground("LOAD_MATCH", {
