@@ -31,7 +31,7 @@ const ok =
   rtsBundled &&
   hasBuildVersion &&
   !hasOldToolbar &&
-  contentSizeKb >= 26;
+  contentSizeKb >= 38;
 
 if (ok) {
   console.log(`  status           : OK — reload extension in chrome://extensions`);
